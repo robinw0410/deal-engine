@@ -43,7 +43,7 @@ python -m core validate listings.json
 | `lat`, `lon` | number | no | Item location. With `location.lat/lon` in the config, the road distance is estimated as straight-line km × `road_factor`. |
 | `distance_km` | number | no | Use this instead of `lat`/`lon` if the source provides a distance. |
 | `shipping_possible` | bool | no | The platform offers shipping with buyer protection. `false` = pickup only. `null` = unknown. |
-| `shipping_cost` | number | no | Shipping cost to you, if the source states it. |
+| `shipping_cost` | number | no | Shipping cost to you, if the source states it. `0` = free shipping. Missing/`null` = unknown: if neither `shipping_possible` nor a distance is known either, the item is marked `shipping_unknown` and `shipping.unknown_cost` (default 15 €) is assumed for candidate selection and score. |
 | `private` | bool | no | Private seller (`true`) or business (`false`). Market estimates prefer private offers. |
 | `published` | `YYYY-MM-DD` | no | Publication date. Used for `max_age_days`, "fresh" market prices and time online. |
 | `condition` | string | no | Condition as stated by the source. |

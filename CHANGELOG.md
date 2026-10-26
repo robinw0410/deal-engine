@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.1 – 2026-10-26
+
+- eBay adapter verified against the live Browse API (token, search on EBAY_AT and EBAY_DE,
+  getItem, check) with the probe command.
+- Unknown shipping costs are no longer treated as 0: such items are marked `shipping_unknown`
+  ("shipping unknown, assumed 15 €") and `shipping.unknown_cost` (default 15 €) is used for
+  candidate selection and score. A stated cost of 0 still means free shipping.
+
 ## 0.1.0 – 2026-10-26
 
 First public release.

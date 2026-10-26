@@ -49,6 +49,8 @@ def device_badges(l):
         out += ' <span class="pill bad">photos: more damage</span>'
     elif "insufficient" in pc:
         out += ' <span class="pill unk">photos insufficient</span>'
+    if l.get("shipping_unknown"):
+        out += ' <span class="pill unk">shipping unknown</span>'
     if l.get("auction_end"):
         out += f' <span class="pill unk">auction until {esc(l["auction_end"])}</span>'
     if l.get("parts_in_stock"):
@@ -116,6 +118,7 @@ LABELS = {
     "shipping_possible": "Shipping possible", "market_median": "Asking price median (€)",
     "market_n": "Comparison listings", "market_resale_estimate": "Realistic resale price (€)",
     "bundle_qty": "Bundle quantity", "private": "Private seller", "best_offer": "Best offer possible",
+    "shipping_unknown": "Shipping cost unknown", "shipping_note": "Shipping",
 }
 
 

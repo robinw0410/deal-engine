@@ -21,6 +21,7 @@ shipping:
   ship_in_cost: 6              # parcel to you if nothing else is known
   buyer_protection_fee_pct: 0.04   # platform shipping with buyer protection: fee in % ...
   buyer_protection_fee_min: 0.99   # ... but at least this
+  unknown_cost: 15             # source states no shipping cost (e.g. eBay without shippingCost): assume this, never 0
 
 # LLM steps (evaluation, optional prefilter and classification) use the Claude Code CLI.
 llm:

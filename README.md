@@ -174,6 +174,18 @@ python -m adapters.ebay "your search" --markets EBAY_DE --limit 5 [--country DE 
 It requests a token, runs one search per marketplace, prints the items, and calls getItem and
 `check()` for the first one.
 
+**Verified against the live API on 2026-10-26** with this probe (EBAY_AT and EBAY_DE, 5 items
+each): the client-credentials token, the search on both marketplaces (5 items each, with price,
+shipping cost, condition and item location), getItem for one item (description, 6 images,
+9 aspects, item location) and `check()` (returned `active`) all worked, with 4 API requests
+in total. A full `python -m core run` with the eBay adapter (state, candidates, evaluation) has
+not been run against the live API.
+
+Shipping costs: in that probe, 2 of 10 items had no shipping cost in the search result. A missing
+cost is treated as unknown, never as 0: the item is marked `shipping_unknown` with the note
+"shipping unknown, assumed 15 €", and `shipping.unknown_cost` (default 15 €) is used for the
+candidate selection and the score. A stated cost of 0 counts as free shipping.
+
 ### Your own adapter
 
 Implement `search(query)` and `check(source_id)` (see `adapters/base.py`), return listings in
@@ -191,8 +203,8 @@ the [listing format](docs/listing-format.md), register the class in `adapters/__
 - **LLM evaluations can be wrong**, also on photos, and differ between runs (the same 3 demo
   candidates: 1 of 3 accepted in one `haiku` run, 0 of 3 in the next). The automated tests use a fake
   command; the real CLI was only run manually as described above.
-- The eBay adapter has not been run against the live API in this repository. It is adapted from
-  code that was, but this version is untested against eBay.
+- The eBay adapter is verified only with the probe described above (token, search, getItem,
+  check), not in a full pipeline run against the live API.
 - Without a photo URL, relist detection is text-based (same source and place, same group, price
   within ±15 %, similar title). Two different items with generic titles from the same place can
   still be taken for one.

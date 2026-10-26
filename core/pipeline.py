@@ -22,13 +22,15 @@ from . import clock, history
 from . import config as config_mod
 from .filters import has_signal, passes
 from .groups import bundle_qty, is_accessory, match_group
-from .listing import normalize
+from .listing import normalize, shipping_unknown
 from .market import due as market_due, refresh as market_refresh, resale_from_ask, settings as market_settings
 from .util import eur, load_json, num, save_json
 
 # fields copied from a candidate into a new state entry (if the evaluation did not set them)
-CARRY = ("distance_km", "shipping_possible", "shipping_cost_eur", "private", "condition", "auction_end",
-         "best_offer", "market_median", "market_group", "market_n", "market_resale_estimate")
+CARRY = ("distance_km", "shipping_possible", "shipping_cost_eur", "shipping_unknown", "shipping_note", "private",
+         "condition", "auction_end", "best_offer", "market_median", "market_group", "market_n",
+         "market_resale_estimate")
+UNKNOWN_SHIPPING_COST = 15   # default for shipping.unknown_cost
 # fields the evaluation must not overwrite
 PROTECTED = {"id", "urls", "url", "source", "source_id", "sources", "price", "price_history", "first_seen",
              "last_seen", "merge_into"}
@@ -166,8 +168,20 @@ def reconcile(state, items, adapter, sc, changes, log=print):
     state["listings"] = keep
 
 
-def select(items, known, seen, market, sc, log=print):
-    """New candidates: pass the filters, are not known, are cheap enough relative to the market."""
+def mark_shipping(it, unknown_cost):
+    """Flag (or unflag) an item whose shipping cost is unknown; returns the cost to assume."""
+    if shipping_unknown(it):
+        it["shipping_unknown"] = True
+        it["shipping_note"] = f"shipping unknown, assumed {unknown_cost:g} €"
+        return float(unknown_cost)
+    it.pop("shipping_unknown", None)
+    it.pop("shipping_note", None)
+    return it.get("shipping_cost_eur") or 0
+
+
+def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPPING_COST):
+    """New candidates: pass the filters, are not known, are cheap enough relative to the market.
+    Unknown shipping costs count as unknown_cost, never as 0."""
     flt = sc.get("filters") or {}
     mc = sc.get("market") or {}
     s = market_settings(mc)
@@ -185,11 +199,12 @@ def select(items, known, seen, market, sc, log=print):
         if g and is_accessory(it["title"], mc.get("accessory_regex")):
             continue   # "case for <device>" is not a deal on the device
         m = market.get(g["name"]) if g else None
+        ship = mark_shipping(it, unknown_cost)
         if m:
             it["market_group"], it["market_median"], it["market_n"] = g["name"], m["median"], m["n"]
             it["market_resale_estimate"] = resale_from_ask(m, s["sale_factor"])
             ratio = s["max_price_ratio"] if sig is None else s["defect_price_ratio"] if sig else s["flip_ratio"]
-            total = (it.get("price") or 0) + (it.get("shipping_cost_eur") or 0)
+            total = (it.get("price") or 0) + ship
             qty = bundle_qty(it["title"], g)   # "3 controllers" is compared with 3 x the unit median
             if it.get("price") is not None and total > m["median"] * qty * float(ratio):
                 too_expensive += 1
@@ -275,7 +290,8 @@ def collect(cfg, sc, adapter, log=print):
 
         known = {(l.get("sources") or {}).get(adapter.name) for l in state["listings"]}
         seen = load_json(P["seen"], {})
-        cands, skipped = select(items, known, seen, market, sc, log)
+        unknown_cost = float((cfg.get("shipping") or {}).get("unknown_cost", UNKNOWN_SHIPPING_COST))
+        cands, skipped = select(items, known, seen, market, sc, log, unknown_cost)
         log(f"{len(cands)} new candidates for evaluation" + (f" ({skipped} postponed to the next run)" if skipped else ""))
 
         for it in cands:
@@ -291,6 +307,7 @@ def collect(cfg, sc, adapter, log=print):
                     it["attrs"].update(v)
                 elif v not in (None, ""):
                     it[k] = v
+            mark_shipping(it, unknown_cost)   # details may have delivered the shipping cost
             it["images"] = download_images(img_urls[:int(sc.get("images", 1))], work / "img", it["source_id"],
                                            cfg["_data"]) if int(sc.get("images", 1)) > 0 else []
             ready.append(it)

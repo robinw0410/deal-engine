@@ -70,3 +70,11 @@ def normalize(raw, source, home=None, road_factor=1.3):
         "_image": images[0] if images else None,
         "_img_urls": images,
     }
+
+
+def shipping_unknown(it):
+    """The item has to be shipped, but the cost is not known: no cost stated, no platform shipping
+    model (shipping_possible) and no pickup distance. Such a cost is never treated as 0;
+    a stated cost of 0 means free shipping."""
+    return it.get("shipping_cost_eur") is None and it.get("shipping_possible") is None \
+        and it.get("distance_km") is None

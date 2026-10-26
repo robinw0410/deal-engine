@@ -20,7 +20,9 @@ use only the criteria, device groups, tiers, evaluation rules and the fields.
    conservatively (lower third of the offers) and note "resale price estimated" in `issues`.
    `distance_km` is the estimated road distance from home, `shipping_possible` whether the
    platform offers shipping with buyer protection, `shipping_cost_eur` the shipping cost if the
-   source states it, `private` whether the seller is private.
+   source states it, `private` whether the seller is private. `shipping_unknown: true` means the
+   source states no shipping cost: do not assume free shipping; leave `shipping_cost_eur` out
+   unless you have a realistic estimate (the script then assumes the lump sum in `shipping_note`).
    Discard if hard criteria are violated, if it is a wanted/buying ad, an accessory instead of a
    device, or if the deal does not pay off according to the rules.
 3. Write `{{ACCEPTED}}` as a JSON list of ONLY the accepted listings (empty list `[]` if none

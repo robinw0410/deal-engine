@@ -39,6 +39,7 @@ SHIPPING_DEFAULTS = {
     "drive_kmh": 70, "km_cost": 0.25,   # pickup: driving time there and back, cost per km
     "ship_in_cost": 6,            # parcel to you, if the evaluator gives nothing
     "buyer_protection_fee_pct": 0.04, "buyer_protection_fee_min": 0.99,
+    "unknown_cost": 15,           # shipping cost the source does not state ("shipping unknown"), never 0
 }
 
 def settings(cfg, sc):
@@ -93,6 +94,9 @@ def compute(l, c, caps=True):
         travel_h = 2 * dist / c["drive_kmh"]
         ship = max(ship, round(2 * dist * c["km_cost"]))
         how = f"pickup {dist:.0f} km"
+    elif l.get("shipping_unknown") and not ship:
+        # the source states no shipping cost: assume the lump sum (also over an evaluator's 0)
+        ship, how = float(c["unknown_cost"]), f"shipping unknown, assumed {c['unknown_cost']:g} €"
     capped = f" (bundle x{l['bundle_qty']})" if l.get("bundle_qty") else ""
     if est and resale > est * c["resale_cap"]:
         resale, capped = round(est * c["resale_cap"]), capped + " (capped at market estimate)"
