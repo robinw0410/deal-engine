@@ -30,7 +30,7 @@ list, and serves everything on <http://127.0.0.1:8081/>:
 - <http://127.0.0.1:8081/deals/> – deals, parts and purchases
 
 `make demo-de` runs the same demo with the German locale into `data/demo-de` (it does not start
-the server). Run the tests with `make test`.
+the server; `make serve-demo-de` serves it, deal list in German). Run the tests with `make test`.
 
 Everything lives in the `deal_engine` package; the commands below are run from the repository
 directory (elsewhere, `deal_engine` has to be importable, e.g. via `PYTHONPATH`).
@@ -150,9 +150,17 @@ The LLM steps call the [Claude Code](https://docs.claude.com/en/docs/claude-code
 mode (`claude -p`) with only the Read/Write tools, because the evaluator has to read the
 candidate file and photos and write one result file. Command and arguments are configurable
 under `llm:`. Each call gets `--tools` (only Read/Write exist for the evaluator, no tools for
-classification), `--allowedTools` and, by default, `--strict-mcp-config --mcp-config '{"mcpServers": {}}'`
-so that no MCP servers are loaded. Your own Claude Code settings and hooks still apply to these
-runs. If the CLI is not available, the evaluation step fails and is reported as a problem in the
+classification), `--allowedTools`, by default `--strict-mcp-config --mcp-config '{"mcpServers": {}}'`
+so that no MCP servers are loaded, and always `--disallowedTools Bash WebFetch WebSearch`, whatever
+`llm.extra_args` say; `extra_args` that allow one of these tools with `--tools`/`--allowedTools` are
+a configuration error. Your own Claude Code settings and hooks still apply to these runs. As a
+second line of defence, deny these tools in the Claude Code settings of the user that runs
+deal-engine (e.g. a service user), `~/.claude/settings.json`:
+
+```json
+{"permissions": {"deny": ["Bash", "WebFetch", "WebSearch"]}}
+```
+ If the CLI is not available, the evaluation step fails and is reported as a problem in the
 run report; collecting, tracking and market prices still work.
 
 What has actually been run (Claude Code 2.1.310, model `haiku`, 5 defective demo listings, no
@@ -301,7 +309,9 @@ relist detection, and the texts deal-engine writes: report, score calculation, n
 message draft, insights, price hints, parts block, page texts and field labels. It also selects
 the built-in prompts. Machine values in the state stay English in every locale (`deal_type`
 repair/flip, `risk` low/medium/high, `photo_check`, status `reserved`); only what is shown is
-translated.
+translated. The deal list page follows the global `locale` as well (texts in
+`deal_engine/deals/texts.py`); deal statuses are stored as machine values and only shown translated.
+Error messages from the deal server's API are English.
 
 ### Prompts
 
@@ -333,7 +343,9 @@ eur|int|text}`), `meta`, `badges` (built in: `deal_type`, `risk`, `photo_check`,
 ok|bad|unk|new, when}`), `sorts` (`{label, field, desc}`, the first is the default), `facets`
 (`{key, field}` or regex categories `{key, from, rules: [[label, regex], …], other}`), `groups`,
 `chips`, `orders`, `toggles` (`{key, label, field}` with `equals`, `min` or `max`) and
-`deal_link`. Labels are plain text or one text per locale (`{en: Profit, de: Gewinn}`); a missing
+`deal_link`. `copy_prompt: true` adds a "copy as prompt" button to every card (a plain-text summary
+of the listing for a chat with an assistant); it is off by default and can be switched on for all
+searches with the top-level `web.copy_prompt: true` (a search's own value wins). Labels are plain text or one text per locale (`{en: Profit, de: Gewinn}`); a missing
 label is the locale's field label. A setting with a clearly wrong type stops with a configuration
 error naming the key. `config.example.yaml` has the full electronics page; a sketch for
 motorbikes whose profile returns `touring_score` and `gravel_score`:
@@ -449,8 +461,6 @@ candidate selection and the score. A stated cost of 0 counts as free shipping.
 - **Regex rules are language- and market-specific.** Groups, filters, accessory and bundle
   detection come with English defaults and have to be adapted to your market. The German locale
   rules are regex word lists as well and need tuning for real listings.
-- The deal list page (`deal_engine/deals/deals.html`) is English, also with `locale: de`; only the price
-  hints and the parts block from the server are translated, so a German setup shows a mixed page.
 - **LLM evaluations can be wrong**, also on photos, and differ between runs (the same 3 demo
   candidates: 1 of 3 accepted in one `haiku` run, 0 of 3 in the next). The automated tests use a fake
   command; the real CLI was only run manually as described above, with 0.1.x.

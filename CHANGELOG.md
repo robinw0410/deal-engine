@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.2.1 – 2026-10-27
+
+### Security
+
+- Every LLM call now gets `--disallowedTools Bash WebFetch WebSearch` in addition to the explicit
+  `--tools` list (Read/Write for evaluation and prefilter, none for classification), also when
+  `llm.extra_args` are set. `llm.extra_args` that allow Bash, WebFetch or WebSearch via
+  `--tools`/`--allowedTools` are a configuration error.
+
+### Added
+
+- **Deal list localized:** the deal list page (`deal_engine/deals/deals.html`) follows the config
+  `locale` (`en`/`de`): all headings, buttons, labels, placeholders, confirmations, empty states,
+  status names and number/currency formatting (de: `1.234 €`). Texts live in
+  `deal_engine/deals/texts.py`. Statuses are still stored as machine values (`bought`,
+  `in progress`, `listed`, `sold`, `scrapped`). This fixes the "Not localized" note of 0.2.0.
+- **`web.copy_prompt`** (global, overridable per search with `searches.<name>.web.copy_prompt`)
+  switches the "copy as prompt" button of the search pages.
+- `--locale` option of the deal server (overrides the config locale); `make serve-demo-de` uses it,
+  so the German demo shows the German deal list and price hints.
+
+### Changed
+
+- **Breaking:** the "copy as prompt" button (and its hidden prompt text) is off by default; set
+  `web.copy_prompt: true` to get it back.
+
 ## 0.2.0 – 2026-10-26
 
 Extensibility release: adapters, filters, language, prompts, page layout and score adjustments can

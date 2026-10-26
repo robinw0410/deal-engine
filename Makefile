@@ -26,4 +26,4 @@ clean-demo:
 
 ## serve-demo-de: serve the German demo (after make demo-de)
 serve-demo-de:
-	DEAL_ENGINE_DATA_DIR=data/demo-de $(PY) -m deal_engine.deals.deals_server --config config.example.yaml --port $(PORT) --web-root data/demo-de/web
+	DEAL_ENGINE_DATA_DIR=data/demo-de $(PY) -m deal_engine.deals.deals_server --config config.example.yaml --port $(PORT) --web-root data/demo-de/web --locale de

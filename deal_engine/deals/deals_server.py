@@ -4,7 +4,7 @@ Tracks purchases (deals), the parts used for them, a parts catalogue with stock,
 purchases (unit cost = moving average). For open deals it shows a listing price hint from the
 market data of one search (deals.market_search in the config).
 
-  python -m deal_engine.deals.deals_server [--config PATH] [--port N] [--web-root DIR]
+  python -m deal_engine.deals.deals_server [--config PATH] [--port N] [--web-root DIR] [--locale de]
   python -m deal_engine.deals.deals_server --prompt-block SEARCH    parts catalogue as a prompt section
 
 Binds to 127.0.0.1 only and has no authentication. Do not expose it to a network without
@@ -12,6 +12,7 @@ putting authentication in front of it (e.g. a reverse proxy).
 With --web-root, the rendered search pages are served at / as well (handy for the demo).
 """
 import argparse
+import html
 import json
 import mimetypes
 import re
@@ -29,6 +30,7 @@ from ..core import config as config_mod
 from ..core.groups import match_group
 from ..core.market import settings as market_settings
 from ..core.util import load_json, median
+from . import texts as texts_mod
 
 PAGE = Path(__file__).resolve().parent / "deals.html"
 LOCK = threading.Lock()
@@ -309,6 +311,23 @@ def prompt_block(cfg, loc=None):
     return "\n".join(lines) + "\n"
 
 
+# ---------------------------------------------------------------------------- page
+def render_page(cfg=None):
+    """deals.html with the texts of the config locale: {{key}} placeholders (escaped), {{lang}} and
+    {{texts}} (the whole table as JSON for the page script)."""
+    code = (cfg or CFG or {}).get("locale") or "en"
+    T = texts_mod.get(code)
+
+    def sub(m):
+        k = m.group(1)
+        if k == "lang":
+            return html.escape(code)
+        if k == "texts":
+            return json.dumps(T, ensure_ascii=False).replace("</", "<\\/")
+        return html.escape(T[k])
+    return re.sub(r"\{\{([\w. ]+)\}\}", sub, PAGE.read_text()).encode()
+
+
 # ---------------------------------------------------------------------------- HTTP
 class H(BaseHTTPRequestHandler):
     server_version = "deals"
@@ -385,7 +404,7 @@ class H(BaseHTTPRequestHandler):
                 self.send_header("Location", "/deals/")
                 self.end_headers()
                 return
-            return self.send(200, ctype="text/html", raw=PAGE.read_bytes())
+            return self.send(200, ctype="text/html", raw=render_page())
         if r == "/api/all":
             return self.tx(lambda con: None)
         self.send(404, {"error": "not found"})
@@ -484,9 +503,12 @@ def main(argv=None):
     ap.add_argument("--config")
     ap.add_argument("--port", type=int)
     ap.add_argument("--web-root", help="also serve the rendered pages from this directory at /")
+    ap.add_argument("--locale", help="override the locale of the config (en, de)")
     ap.add_argument("--prompt-block", action="store_true", help="print the parts catalogue as a prompt section")
     a = ap.parse_args(argv)
     CFG = config_mod.load(a.config)
+    if a.locale:
+        CFG["locale"] = config_mod._locale(a.locale, "--locale")
     if a.prompt_block:
         sys.stdout.write(prompt_block(CFG))
         return 0

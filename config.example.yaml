@@ -34,6 +34,7 @@ llm:
 
 web:
   root: "{data_dir}/web"
+  copy_prompt: false           # "copy as prompt" button on every card (listing summary for a chat); per search: searches.<name>.web.copy_prompt
   compare_links:               # "compare yourself" links on every card, {query} = group or title
     - label: eBay sold
       url: "https://www.ebay.com/sch/i.html?_nkw={query}&LH_Sold=1&LH_Complete=1"

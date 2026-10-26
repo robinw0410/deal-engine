@@ -1,7 +1,7 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+<html lang="{{lang}}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
-<title>Deals &amp; Parts</title>
+<title>{{title}}</title>
 <style>
 :root{--bg:#f4f2ec;--card:#fffdf8;--fg:#1f2420;--muted:#6c6f68;--line:#e2ded3;--acc:#2f5d46;--acc-soft:#e3ece5;
  --ok:#2f6b4f;--ok-bg:#e2efe6;--bad:#9b3b26;--bad-bg:#f5e3dc;--unk:#7a6522;--unk-bg:#f3ecd6;--new:#1f5f8b;--new-bg:#e1ecf5;
@@ -105,12 +105,12 @@ label.check input{width:auto}
 footer{margin-top:40px;color:var(--muted);font-size:.78rem}
 [hidden]{display:none!important}
 </style></head><body><main>
-<nav class="site"><a href="../">Search pages</a><a href="./" class="active">Deals</a></nav>
+<nav class="site"><a href="../">{{nav.pages}}</a><a href="./" class="active">{{nav.deals}}</a></nav>
 
 <div class="head">
-  <div><h1>Deals &amp; Parts</h1><div class="sub">Profit = sale − purchase − parts − other costs</div></div>
+  <div><h1>{{title}}</h1><div class="sub">{{head.formula}}</div></div>
   <div class="tabs" role="tablist">
-    <button data-tab="overview">Overview</button><button data-tab="deals">Deals<small id="nOpen"></small></button><button data-tab="stock">Parts<small id="nStock"></small></button>
+    <button data-tab="overview">{{tab.overview}}</button><button data-tab="deals">{{tab.deals}}<small id="nOpen"></small></button><button data-tab="stock">{{tab.stock}}<small id="nStock"></small></button>
   </div>
 </div>
 <p class="err" id="gerr"></p>
@@ -118,19 +118,19 @@ footer{margin-top:40px;color:var(--muted);font-size:.78rem}
 <!-- Overview -->
 <section id="overview" hidden>
   <div class="tiles" id="tiles"></div>
-  <div class="section"><h2>By category <span class="sub">closed deals</span></h2></div>
-  <div class="box"><table><thead><tr><th>Category</th><th class="num">Deals</th><th class="num">Profit</th>
-    <th class="num opt">Ø per deal</th><th class="num">€/h</th><th class="num opt">Scrapped</th></tr></thead><tbody id="cats"></tbody></table></div>
-  <div class="section"><h2>Estimate vs. result</h2><span class="sub" id="calSum"></span></div>
-  <div class="box"><table><thead><tr><th>Deal</th><th class="num">estimated</th><th class="num">actual</th><th class="num">diff.</th>
-    <th class="num opt">h est./actual</th></tr></thead><tbody id="cal"></tbody></table></div>
+  <div class="section"><h2>{{ov.by_cat}} <span class="sub">{{ov.closed_deals}}</span></h2></div>
+  <div class="box"><table><thead><tr><th>{{th.category}}</th><th class="num">{{th.deals}}</th><th class="num">{{th.profit}}</th>
+    <th class="num opt">{{th.avg_deal}}</th><th class="num">{{th.per_hour}}</th><th class="num opt">{{th.scrapped}}</th></tr></thead><tbody id="cats"></tbody></table></div>
+  <div class="section"><h2>{{ov.calib}}</h2><span class="sub" id="calSum"></span></div>
+  <div class="box"><table><thead><tr><th>{{th.deal}}</th><th class="num">{{th.estimated}}</th><th class="num">{{th.actual}}</th><th class="num">{{th.diff}}</th>
+    <th class="num opt">{{th.hours_est}}</th></tr></thead><tbody id="cal"></tbody></table></div>
 </section>
 
 <!-- Deals -->
 <section id="deals" hidden>
   <div class="section">
-    <div class="chips" id="dfilter"><button class="chip" data-f="open">open</button><button class="chip" data-f="sold">sold</button><button class="chip" data-f="scrapped">scrapped</button><button class="chip" data-f="">all</button></div>
-    <button class="primary" id="newDeal">+ New deal</button>
+    <div class="chips" id="dfilter"><button class="chip" data-f="open">{{f.open}}</button><button class="chip" data-f="sold">{{status.sold}}</button><button class="chip" data-f="scrapped">{{status.scrapped}}</button><button class="chip" data-f="">{{f.all}}</button></div>
+    <button class="primary" id="newDeal">{{btn.new_deal}}</button>
   </div>
   <div class="box" id="dlist"></div>
 </section>
@@ -138,99 +138,106 @@ footer{margin-top:40px;color:var(--muted);font-size:.78rem}
 <!-- Parts -->
 <section id="stock" hidden>
   <div class="section">
-    <div class="tools"><div class="chips" id="pfilter"><button class="chip" data-f="stock">in stock</button><button class="chip" data-f="">whole catalogue</button></div>
-      <input class="search" id="psearch" type="search" placeholder="Search …" aria-label="Search parts"></div>
-    <div class="tools"><button id="newPart">+ Part (catalogue only)</button><button class="primary" id="newBuy">+ Book purchase</button></div>
+    <div class="tools"><div class="chips" id="pfilter"><button class="chip" data-f="stock">{{pf.stock}}</button><button class="chip" data-f="">{{pf.all}}</button></div>
+      <input class="search" id="psearch" type="search" placeholder="{{ph.search}}" aria-label="{{aria.search_parts}}"></div>
+    <div class="tools"><button id="newPart">{{btn.new_part}}</button><button class="primary" id="newBuy">{{btn.new_buy}}</button></div>
   </div>
-  <div class="box"><table><thead><tr><th>Part</th><th class="opt">fits</th><th class="num">Price</th><th class="num opt">Install</th><th class="num">Stock</th><th></th></tr></thead>
+  <div class="box"><table><thead><tr><th>{{th.part}}</th><th class="opt">{{th.fits}}</th><th class="num">{{th.price}}</th><th class="num opt">{{th.install}}</th><th class="num">{{th.stock}}</th><th></th></tr></thead>
     <tbody id="plist"></tbody></table></div>
   <p class="sub" id="pfoot"></p>
-  <div class="section"><h2>Purchases</h2><span class="sub">Unit cost = total ÷ quantity, averaged over several purchases</span></div>
-  <div class="box"><table><thead><tr><th>Date</th><th>Part</th><th class="num">Qty</th><th class="num">Total</th><th class="num opt">per unit</th><th class="opt">Source</th><th></th></tr></thead>
+  <div class="section"><h2>{{buys.title}}</h2><span class="sub">{{buys.sub}}</span></div>
+  <div class="box"><table><thead><tr><th>{{th.date}}</th><th>{{th.part}}</th><th class="num">{{th.qty}}</th><th class="num">{{th.total}}</th><th class="num opt">{{th.per_unit}}</th><th class="opt">{{th.source}}</th><th></th></tr></thead>
     <tbody id="buys"></tbody></table></div>
-  <p class="sub">With <code>python -m deal_engine.deals.deals_server --prompt-block</code> the catalogue can be added to the evaluation prompt: its prices and installation times replace the evaluator's estimates, parts in stock count as 0 €. "estimate" means: initial value, no purchase booked yet.</p>
+  <p class="sub">{{stock.note_pre}} <code>python -m deal_engine.deals.deals_server --prompt-block</code> {{stock.note_post}}</p>
 </section>
 
 <!-- Deal dialog -->
 <dialog id="dDlg"><form id="dForm" method="dialog" autocomplete="off">
-  <div class="dh"><h2 id="dTitle">New deal</h2><button type="button" class="ghost" data-close>Close</button></div>
+  <div class="dh"><h2 id="dTitle">{{dlg.new_deal}}</h2><button type="button" class="ghost" data-close>{{btn.close}}</button></div>
   <div class="db">
-    <label class="wide">Item / description<input name="item" required maxlength="200" placeholder="e.g. handheld console, stick drift"></label>
-    <label>Category<input name="category" list="catlist" maxlength="60"></label>
-    <label>Status<select name="status"><option>bought</option><option>in progress</option><option>listed</option><option>sold</option><option>scrapped</option></select></label>
-    <label>Purchase (€)<input name="buy_price" inputmode="decimal"></label>
-    <label>Other (€)<input name="other_cost" inputmode="decimal" placeholder="shipping, fees, travel"></label>
-    <div class="fs wide"><div class="sub">Use parts from stock</div>
+    <label class="wide">{{lbl.item}}<input name="item" required maxlength="200" placeholder="{{ph.item}}"></label>
+    <label>{{lbl.category}}<input name="category" list="catlist" maxlength="60"></label>
+    <label>{{lbl.status}}<select name="status"><option value="bought">{{status.bought}}</option><option value="in progress">{{status.in progress}}</option><option value="listed">{{status.listed}}</option><option value="sold">{{status.sold}}</option><option value="scrapped">{{status.scrapped}}</option></select></label>
+    <label>{{lbl.buy_price}}<input name="buy_price" inputmode="decimal"></label>
+    <label>{{lbl.other_cost}}<input name="other_cost" inputmode="decimal" placeholder="{{ph.other_cost}}"></label>
+    <div class="fs wide"><div class="sub">{{dlg.use_parts}}</div>
       <div class="used" id="usedParts"></div>
-      <div class="row"><select id="partSel" aria-label="Part"></select><input id="partQty" type="number" min="1" value="1" aria-label="Quantity"><button type="button" id="partAdd">Add</button></div>
-      <label>Parts bought separately (€)<input name="parts_cost" inputmode="decimal" placeholder="not from stock"></label>
+      <div class="row"><select id="partSel" aria-label="{{aria.part}}"></select><input id="partQty" type="number" min="1" value="1" aria-label="{{aria.qty}}"><button type="button" id="partAdd">{{btn.add}}</button></div>
+      <label>{{lbl.parts_cost}}<input name="parts_cost" inputmode="decimal" placeholder="{{ph.parts_cost}}"></label>
     </div>
-    <label>Work (h)<input name="hours" inputmode="decimal" placeholder="incl. pickup, listing"></label>
-    <label>Sale (€)<input name="sell_price" inputmode="decimal"></label>
-    <label>Bought on<input name="bought_date" type="date"></label>
-    <label>Sold on<input name="sold_date" type="date"></label>
-    <label class="wide">Link to the listing<input name="link" type="url" maxlength="500"></label>
-    <label class="wide">Notes<textarea name="notes" rows="2" maxlength="1000" placeholder="What was broken, what did you do?"></textarea></label>
-    <label>Market group<input name="market_group" list="grplist" maxlength="60" placeholder="automatic from the description"></label>
+    <label>{{lbl.hours}}<input name="hours" inputmode="decimal" placeholder="{{ph.hours}}"></label>
+    <label>{{lbl.sell_price}}<input name="sell_price" inputmode="decimal"></label>
+    <label>{{lbl.bought_date}}<input name="bought_date" type="date"></label>
+    <label>{{lbl.sold_date}}<input name="sold_date" type="date"></label>
+    <label class="wide">{{lbl.link}}<input name="link" type="url" maxlength="500"></label>
+    <label class="wide">{{lbl.notes}}<textarea name="notes" rows="2" maxlength="1000" placeholder="{{ph.notes}}"></textarea></label>
+    <label>{{lbl.market_group}}<input name="market_group" list="grplist" maxlength="60" placeholder="{{ph.market_group}}"></label>
     <div class="hintbox wide" id="hintBox" hidden></div>
     <div class="calc wide" id="calc"></div>
     <div class="botest wide" id="botEst"></div>
     <input type="hidden" name="listing_id"><input type="hidden" name="est_profit"><input type="hidden" name="est_hours">
   </div>
-  <div class="df"><button type="button" class="danger ghost" id="dDel" hidden>Delete</button><span class="err" id="dErr"></span><span class="sp"></span>
-    <button type="button" data-close>Cancel</button><button class="primary" type="submit">Save</button></div>
+  <div class="df"><button type="button" class="danger ghost" id="dDel" hidden>{{btn.delete}}</button><span class="err" id="dErr"></span><span class="sp"></span>
+    <button type="button" data-close>{{btn.cancel}}</button><button class="primary" type="submit">{{btn.save}}</button></div>
 </form></dialog>
 
 <!-- Part dialog -->
 <dialog id="pDlg"><form id="pForm" method="dialog" autocomplete="off">
-  <div class="dh"><h2 id="pTitle">New part</h2><button type="button" class="ghost" data-close>Close</button></div>
+  <div class="dh"><h2 id="pTitle">{{dlg.new_part}}</h2><button type="button" class="ghost" data-close>{{btn.close}}</button></div>
   <div class="db">
-    <label class="wide">Name<input name="name" required maxlength="120" placeholder="e.g. thumbstick module"></label>
-    <label>Fits<input name="device" maxlength="120" placeholder="e.g. which devices"></label>
-    <label>Specification<input name="spec" maxlength="200"></label>
-    <label>Price per unit (€)<input name="unit_cost" inputmode="decimal"></label>
-    <label>Stock (correction only)<input name="qty" type="number" min="0" value="0"></label>
-    <label>Install time per unit (min)<input name="install_min" type="number" min="0"></label>
-    <label class="check"><input type="checkbox" name="estimated"> price is only an estimate</label>
-    <label class="wide">Supplier (link)<input name="link" type="url" maxlength="500"></label>
-    <label class="wide">Note<input name="notes" maxlength="300"></label>
+    <label class="wide">{{lbl.name}}<input name="name" required maxlength="120" placeholder="{{ph.part_name}}"></label>
+    <label>{{lbl.fits}}<input name="device" maxlength="120" placeholder="{{ph.fits}}"></label>
+    <label>{{lbl.spec}}<input name="spec" maxlength="200"></label>
+    <label>{{lbl.unit_cost}}<input name="unit_cost" inputmode="decimal"></label>
+    <label>{{lbl.qty_fix}}<input name="qty" type="number" min="0" value="0"></label>
+    <label>{{lbl.install}}<input name="install_min" type="number" min="0"></label>
+    <label class="check"><input type="checkbox" name="estimated"> {{lbl.estimated}}</label>
+    <label class="wide">{{lbl.supplier}}<input name="link" type="url" maxlength="500"></label>
+    <label class="wide">{{lbl.note}}<input name="notes" maxlength="300"></label>
   </div>
-  <div class="df"><button type="button" class="danger ghost" id="pDel" hidden>Delete</button><span class="err" id="pErr"></span><span class="sp"></span>
-    <button type="button" data-close>Cancel</button><button class="primary" type="submit">Save</button></div>
+  <div class="df"><button type="button" class="danger ghost" id="pDel" hidden>{{btn.delete}}</button><span class="err" id="pErr"></span><span class="sp"></span>
+    <button type="button" data-close>{{btn.cancel}}</button><button class="primary" type="submit">{{btn.save}}</button></div>
 </form></dialog>
 <!-- Purchase dialog -->
 <dialog id="bDlg"><form id="bForm" method="dialog" autocomplete="off">
-  <div class="dh"><h2>Book purchase</h2><button type="button" class="ghost" data-close>Close</button></div>
+  <div class="dh"><h2>{{dlg.buy}}</h2><button type="button" class="ghost" data-close>{{btn.close}}</button></div>
   <div class="db">
-    <label class="wide">Part<select name="part_id" id="bPart"></select></label>
-    <div class="fs wide" id="bNew" hidden><div class="sub">New part</div>
-      <label>Name<input name="np_name" maxlength="120" placeholder="e.g. hall effect stick"></label>
-      <label>Fits<input name="np_device" maxlength="120"></label>
-      <label>Specification<input name="np_spec" maxlength="200"></label>
-      <label>Install time per unit (min)<input name="np_install_min" type="number" min="0"></label>
+    <label class="wide">{{lbl.part}}<select name="part_id" id="bPart"></select></label>
+    <div class="fs wide" id="bNew" hidden><div class="sub">{{dlg.new_part}}</div>
+      <label>{{lbl.name}}<input name="np_name" maxlength="120" placeholder="{{ph.np_name}}"></label>
+      <label>{{lbl.fits}}<input name="np_device" maxlength="120"></label>
+      <label>{{lbl.spec}}<input name="np_spec" maxlength="200"></label>
+      <label>{{lbl.install}}<input name="np_install_min" type="number" min="0"></label>
     </div>
-    <label>Quantity<input name="qty" type="number" min="1" value="1" required></label>
-    <label>Total incl. shipping (€)<input name="total_cost" inputmode="decimal" required></label>
-    <label>Bought on<input name="date" type="date"></label>
-    <label class="wide">Source<input name="source" maxlength="500" placeholder="link or shop name"></label>
+    <label>{{lbl.quantity}}<input name="qty" type="number" min="1" value="1" required></label>
+    <label>{{lbl.total}}<input name="total_cost" inputmode="decimal" required></label>
+    <label>{{lbl.bought_date}}<input name="date" type="date"></label>
+    <label class="wide">{{lbl.source}}<input name="source" maxlength="500" placeholder="{{ph.source}}"></label>
     <div class="calc wide" id="bCalc"></div>
   </div>
   <div class="df"><span class="err" id="bErr"></span><span class="sp"></span>
-    <button type="button" data-close>Cancel</button><button class="primary" type="submit">Book</button></div>
+    <button type="button" data-close>{{btn.cancel}}</button><button class="primary" type="submit">{{btn.book}}</button></div>
 </form></dialog>
 <datalist id="catlist"></datalist><datalist id="grplist"></datalist>
-<footer>Data: state/deals.db in the data directory.</footer>
+<footer>{{footer}}</footer>
 </main>
+<script>window.DE_T = {{texts}};</script>
 <script>
 (function () {
   "use strict";
   var S = { deals: [], parts: [], purchases: [] }, tab = "deals", dFilter = "open", pFilter = "stock", editDeal = null, editPart = null, used = [];
+  var T = window.DE_T || {}, NUM = T["num.locale"] || "en";
   var $ = function (id) { return document.getElementById(id); };
   var n = function (v) { v = parseFloat(String(v == null ? "" : v).replace(",", ".")); return isNaN(v) ? 0 : v; };
   var has = function (v) { return v !== null && v !== undefined && v !== ""; };
-  function eur(v, sign) { if (!has(v)) return "–"; var r = Math.round(v); return (sign && r > 0 ? "+" : "") + r.toLocaleString("en") + " €"; }
-  function eur2(v) { return has(v) ? Number(v).toLocaleString("en", { maximumFractionDigits: 2 }) + " €" : "–"; }
+  function eur(v, sign) { if (!has(v)) return "–"; var r = Math.round(v); return (sign && r > 0 ? "+" : "") + r.toLocaleString(NUM) + " €"; }
+  function eur2(v) { return has(v) ? Number(v).toLocaleString(NUM, { maximumFractionDigits: 2 }) + " €" : "–"; }
+  function num(v) { return has(v) && !isNaN(Number(v)) ? Number(v).toLocaleString(NUM, { maximumFractionDigits: 2 }) : "–"; }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  // text from the table, {name} filled from o (plain text); th() escapes the text and inserts o as HTML
+  function t(k, o) { return String(T[k] == null ? k : T[k]).replace(/\{(\w+)\}/g, function (m, x) { return o && x in o ? o[x] : m; }); }
+  function th(k, o) { return esc(T[k] == null ? k : T[k]).replace(/\{(\w+)\}/g, function (m, x) { return o && x in o ? o[x] : m; }); }
+  function status(s) { return T["status." + s] || s; }
   function cls(v) { return !has(v) ? "" : v >= 0 ? "pos" : "neg"; }
   function done(d) { return d.status === "sold" || d.status === "scrapped"; }
   function cost(d) { return n(d.buy_price) + n(d.parts_cost) + n(d.stock_parts_cost) + n(d.other_cost); }
@@ -260,7 +267,7 @@ footer{margin-top:40px;color:var(--muted);font-size:.78rem}
     $("nStock").textContent = inStock.length ? " " + inStock.reduce(function (s, p) { return s + p.qty; }, 0) : "";
     renderOverview(open, closed); renderDeals(); renderParts(); renderBuys();
     var cats = {}; S.deals.forEach(function (d) { if (d.category) cats[d.category] = 1; });
-    ["Controller", "Console", "Handheld", "Laptop", "Mini PC", "Phone", "Audio"].forEach(function (c) { cats[c] = 1; });
+    (T["cats.suggest"] || []).forEach(function (c) { cats[c] = 1; });
     $("catlist").innerHTML = Object.keys(cats).sort().map(function (c) { return '<option value="' + esc(c) + '">'; }).join("");
     $("grplist").innerHTML = (S.groups || []).map(function (g) { return '<option value="' + esc(g) + '">'; }).join("");
   }
@@ -271,16 +278,16 @@ footer{margin-top:40px;color:var(--muted);font-size:.78rem}
     var stockVal = S.parts.reduce(function (s, p) { return s + p.qty * n(p.unit_cost); }, 0);
     var scrap = closed.filter(function (d) { return d.status === "scrapped"; }).length;
     $("tiles").innerHTML = [
-      [closed.length ? '<span class="' + cls(gain) + '">' + eur(gain, 1) + "</span>" : "–", "total profit"],
-      [hrs > 0 ? eur(gain / hrs) + "/h" : "–", "Ø hourly rate"],
-      [closed.length + (scrap ? ' <span class="sub">(' + scrap + " scrapped)</span>" : ""), "closed"],
-      [eur(open.reduce(function (s, d) { return s + cost(d); }, 0)), "tied up in " + open.length + " open deals"],
-      [eur(stockVal), "stock value"]
+      [closed.length ? '<span class="' + cls(gain) + '">' + eur(gain, 1) + "</span>" : "–", th("tile.profit")],
+      [hrs > 0 ? eur(gain / hrs) + esc(t("unit.per_h")) : "–", th("tile.rate")],
+      [closed.length + (scrap ? ' <span class="sub">' + th("tile.scrapped", { n: scrap }) + "</span>" : ""), th("tile.closed")],
+      [eur(open.reduce(function (s, d) { return s + cost(d); }, 0)), th("tile.tied", { n: open.length })],
+      [eur(stockVal), th("tile.stock")]
     ].map(function (t) { return '<div class="tile"><div class="v">' + t[0] + '</div><div class="l">' + t[1] + "</div></div>"; }).join("");
 
     var cats = {};
     closed.forEach(function (d) {
-      var c = d.category || "no category", k = cats[c] = cats[c] || { n: 0, g: 0, h: 0, x: 0 };
+      var c = d.category || t("cat.none"), k = cats[c] = cats[c] || { n: 0, g: 0, h: 0, x: 0 };
       k.n++; k.g += profit(d); k.h += n(d.hours); if (d.status === "scrapped") k.x++;
     });
     $("cats").innerHTML = Object.keys(cats).sort(function (a, b) {
@@ -290,17 +297,17 @@ footer{margin-top:40px;color:var(--muted);font-size:.78rem}
       return "<tr><td>" + esc(c) + '</td><td class="num">' + k.n + '</td><td class="num ' + cls(k.g) + '">' + eur(k.g, 1) +
         '</td><td class="num opt">' + eur(k.g / k.n, 1) + '</td><td class="num ' + cls(ph) + '">' + (ph == null ? "–" : eur(ph)) +
         '</td><td class="num opt">' + (k.x ? k.x + " / " + k.n : "–") + "</td></tr>";
-    }).join("") || '<tr><td colspan="6" class="empty">Nothing closed yet.</td></tr>';
+    }).join("") || '<tr><td colspan="6" class="empty">' + th("empty.closed") + "</td></tr>";
 
     var cal = closed.filter(function (d) { return has(d.est_profit); });
     var diffs = cal.map(function (d) { return profit(d) - n(d.est_profit); });
-    $("calSum").textContent = cal.length >= 3 ? "Ø deviation " + eur(diffs.reduce(function (a, b) { return a + b; }, 0) / cal.length, 1) +
-      " per deal" : cal.length ? "meaningful from about 10 deals" : "";
+    $("calSum").textContent = cal.length >= 3 ? t("cal.avg", { v: eur(diffs.reduce(function (a, b) { return a + b; }, 0) / cal.length, 1) })
+      : cal.length ? t("cal.few") : "";
     $("cal").innerHTML = cal.map(function (d, i) {
       return "<tr><td>" + esc(d.item) + '</td><td class="num">' + eur(d.est_profit, 1) + '</td><td class="num ' + cls(profit(d)) + '">' +
         eur(profit(d), 1) + '</td><td class="num ' + cls(diffs[i]) + '">' + eur(diffs[i], 1) + '</td><td class="num opt">' +
-        (has(d.est_hours) ? d.est_hours : "–") + " / " + (has(d.hours) ? d.hours : "–") + "</td></tr>";
-    }).join("") || '<tr><td colspan="5" class="empty">Deals created via "bought → deal list" show up here after the sale.</td></tr>';
+        num(d.est_hours) + " / " + num(d.hours) + "</td></tr>";
+    }).join("") || '<tr><td colspan="5" class="empty">' + th("empty.cal") + "</td></tr>";
   }
 
   function renderDeals() {
@@ -309,15 +316,15 @@ footer{margin-top:40px;color:var(--muted);font-size:.78rem}
     $("dlist").innerHTML = list.map(function (d) {
       var p = profit(d), ph = perHour(d), c = cost(d);
       var right = done(d)
-        ? '<div class="g ' + cls(p) + '">' + eur(p, 1) + '</div><div class="h">' + (ph == null ? "" : eur(ph) + "/h") + "</div>"
-        : '<div class="g">' + eur(c) + '</div><div class="h">invested' + (has(d.est_profit) ? " · target " + eur(d.est_profit, 1) : "") + "</div>";
+        ? '<div class="g ' + cls(p) + '">' + eur(p, 1) + '</div><div class="h">' + (ph == null ? "" : eur(ph) + esc(t("unit.per_h"))) + "</div>"
+        : '<div class="g">' + eur(c) + '</div><div class="h">' + th("deal.invested") + (has(d.est_profit) ? th("deal.target", { v: eur(d.est_profit, 1) }) : "") + "</div>";
       var parts = (d.parts || []).map(function (x) { return '<span class="tag">' + esc(x.name) + (x.qty > 1 ? " ×" + x.qty : "") + "</span>"; }).join("");
       return '<div class="deal" data-id="' + d.id + '"><div class="t">' + esc(d.item) + '</div><div class="r">' + right + "</div>" +
-        '<div class="m"><span class="pill s-' + esc(d.status.replace(" ", "-")) + '">' + esc(d.status) + "</span>" +
+        '<div class="m"><span class="pill s-' + esc(d.status.replace(" ", "-")) + '">' + esc(status(d.status)) + "</span>" +
         (d.category ? "<span>" + esc(d.category) + "</span>" : "") + "<span>" + esc(d.bought_date || "") + "</span>" + parts + "</div>" +
-        (!done(d) && d.price_hint && d.price_hint.list ? '<div class="hint">List at ' + d.price_hint.list + " €, not below " + d.price_hint.floor + " €</div>" : "") +
+        (!done(d) && d.price_hint && d.price_hint.list ? '<div class="hint">' + th("deal.hint", { list: eur(d.price_hint.list), floor: eur(d.price_hint.floor) }) + "</div>" : "") +
         "</div>";
-    }).join("") || '<div class="empty">' + (dFilter === "open" ? "No open deals." : "No deals.") + "</div>";
+    }).join("") || '<div class="empty">' + th(dFilter === "open" ? "empty.open" : "empty.deals") + "</div>";
   }
 
   function renderParts() {
@@ -329,24 +336,24 @@ footer{margin-top:40px;color:var(--muted);font-size:.78rem}
     $("plist").innerHTML = list.map(function (p) {
       return '<tr><td><div class="pname">' + esc(p.name) + '</div><div class="pspec">' + esc(p.spec || "") +
         (p.notes ? (p.spec ? " · " : "") + esc(p.notes) : "") + '</div></td><td class="opt">' + esc(p.device || "") +
-        '</td><td class="num">' + eur2(p.unit_cost) + (p.estimated ? '<br><span class="pill est">estimate</span>' : "") +
-        '</td><td class="num opt">' + (has(p.install_min) ? p.install_min + " min" : "–") +
+        '</td><td class="num">' + eur2(p.unit_cost) + (p.estimated ? '<br><span class="pill est">' + th("part.estimate") + "</span>" : "") +
+        '</td><td class="num opt">' + (has(p.install_min) ? th("unit.min", { n: p.install_min }) : "–") +
         '</td><td class="num"><span class="stockn' + (p.qty ? "" : " zero") + '">' + p.qty + '</span></td><td class="num">' +
-        '<button type="button" class="ghost" data-buy="' + p.id + '">+ purchase</button><button type="button" class="ghost" data-edit="' + p.id + '">edit</button></td></tr>';
-    }).join("") || '<tr><td colspan="6" class="empty">' + (pFilter ? "Nothing in stock. \"whole catalogue\" shows all parts." : "No matches.") + "</td></tr>";
+        '<button type="button" class="ghost" data-buy="' + p.id + '">' + th("btn.purchase") + '</button><button type="button" class="ghost" data-edit="' + p.id + '">' + th("btn.edit") + "</button></td></tr>";
+    }).join("") || '<tr><td colspan="6" class="empty">' + th(pFilter ? "empty.stock" : "empty.match") + "</td></tr>";
     var val = S.parts.reduce(function (s, p) { return s + p.qty * n(p.unit_cost); }, 0);
     var cnt = S.parts.reduce(function (s, p) { return s + p.qty; }, 0);
-    $("pfoot").textContent = cnt + " parts in stock, worth about " + eur2(Math.round(val * 100) / 100) + " · " + S.parts.length + " parts in the catalogue";
+    $("pfoot").textContent = t("parts.foot", { cnt: cnt, val: eur2(Math.round(val * 100) / 100), n: S.parts.length });
   }
 
   function renderBuys() {
     $("buys").innerHTML = (S.purchases || []).map(function (b) {
-      var src = b.source ? (/^https?:\/\//.test(b.source) ? '<a href="' + esc(b.source) + '" target="_blank" rel="noreferrer">Link ↗</a>' : esc(b.source)) : "";
+      var src = b.source ? (/^https?:\/\//.test(b.source) ? '<a href="' + esc(b.source) + '" target="_blank" rel="noreferrer">' + th("buys.link") + "</a>" : esc(b.source)) : "";
       var dt = b.date ? b.date.slice(8, 10) + "." + b.date.slice(5, 7) + "." + b.date.slice(2, 4) : "";
       return '<tr><td class="tnum" style="white-space:nowrap">' + esc(dt) + "</td><td>" + esc(b.name) + '</td><td class="num">' + b.qty + '</td><td class="num">' +
         eur2(b.total_cost) + '</td><td class="num opt">' + eur2(Math.round(b.total_cost / b.qty * 100) / 100) + '</td><td class="opt">' + src +
-        '</td><td class="num"><button type="button" class="ghost danger" data-unbuy="' + b.id + '" title="Delete purchase" aria-label="Delete purchase">✕</button></td></tr>';
-    }).join("") || '<tr><td colspan="7" class="empty">No purchases booked yet.</td></tr>';
+        '</td><td class="num"><button type="button" class="ghost danger" data-unbuy="' + b.id + '" title="' + th("buys.delete") + '" aria-label="' + th("buys.delete") + '">✕</button></td></tr>';
+    }).join("") || '<tr><td colspan="7" class="empty">' + th("empty.buys") + "</td></tr>";
   }
 
   // ---------------------------------------------------------------- purchase dialog
@@ -354,7 +361,7 @@ footer{margin-top:40px;color:var(--muted);font-size:.78rem}
   function openBuy(pid) {
     bForm.reset(); $("bErr").textContent = "";
     var parts = S.parts.slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
-    $("bPart").innerHTML = '<option value="new">+ new part …</option>' + parts.map(function (p) {
+    $("bPart").innerHTML = '<option value="new">' + th("buy.new_opt") + "</option>" + parts.map(function (p) {
       return '<option value="' + p.id + '">' + esc(p.name) + (p.device ? " (" + esc(p.device) + ")" : "") + "</option>";
     }).join("");
     $("bPart").value = pid ? String(pid) : (parts.length ? String(parts[0].id) : "new");
@@ -367,9 +374,9 @@ footer{margin-top:40px;color:var(--muted);font-size:.78rem}
     var q = parseInt(bForm.elements.qty.value, 10) || 0, tot = n(bForm.elements.total_cost.value), p = isNew ? null : partById(+$("bPart").value);
     var unit = q > 0 ? tot / q : null, avg = unit;
     if (p && p.qty > 0 && has(p.unit_cost) && !p.estimated && q > 0) avg = (p.qty * p.unit_cost + tot) / (p.qty + q);
-    $("bCalc").innerHTML = "<div>per unit<b>" + (unit == null || !has(bForm.elements.total_cost.value) ? "–" : eur2(Math.round(unit * 100) / 100)) + "</b></div>" +
-      "<div>stock afterwards<b>" + ((p ? p.qty : 0) + q) + "</b></div>" +
-      (p && p.qty > 0 && avg != null && has(bForm.elements.total_cost.value) ? "<div>new Ø price<b>" + eur2(Math.round(avg * 100) / 100) + "</b></div>" : "");
+    $("bCalc").innerHTML = "<div>" + th("th.per_unit") + "<b>" + (unit == null || !has(bForm.elements.total_cost.value) ? "–" : eur2(Math.round(unit * 100) / 100)) + "</b></div>" +
+      "<div>" + th("calc.stock_after") + "<b>" + ((p ? p.qty : 0) + q) + "</b></div>" +
+      (p && p.qty > 0 && avg != null && has(bForm.elements.total_cost.value) ? "<div>" + th("calc.new_avg") + "<b>" + eur2(Math.round(avg * 100) / 100) + "</b></div>" : "");
   }
   bForm.addEventListener("input", bChange); $("bPart").addEventListener("change", bChange);
   bForm.addEventListener("submit", function (e) {
@@ -382,7 +389,7 @@ footer{margin-top:40px;color:var(--muted);font-size:.78rem}
   $("newBuy").onclick = function () { openBuy(null); };
   $("buys").onclick = function (e) {
     var id = e.target.dataset.unbuy;
-    if (id && confirm("Delete purchase? Stock and unit cost are recalculated."))
+    if (id && confirm(t("confirm.unbuy")))
       api("DELETE", "api/purchases/" + id, {}).catch(function (err) { $("gerr").textContent = err.message; });
   };
 
@@ -396,35 +403,35 @@ footer{margin-top:40px;color:var(--muted);font-size:.78rem}
   function renderUsed() {
     $("usedParts").innerHTML = used.map(function (u, i) {
       var p = partById(u.part_id) || {};
-      return "<span>" + esc(p.name || u.name) + " ×" + u.qty + ' <button type="button" data-rm="' + i + '" aria-label="remove">×</button></span>';
-    }).join("") || '<span class="sub" style="background:none;padding:0">none</span>';
+      return "<span>" + esc(p.name || u.name) + " ×" + u.qty + ' <button type="button" data-rm="' + i + '" aria-label="' + th("aria.remove") + '">×</button></span>';
+    }).join("") || '<span class="sub" style="background:none;padding:0">' + th("used.none") + "</span>";
     var opts = S.parts.filter(function (p) {
       var u = used.filter(function (x) { return x.part_id === p.id; })[0];
       return available(p) - (u ? u.qty : 0) > 0;
     });
     $("partSel").innerHTML = opts.map(function (p) {
       var u = used.filter(function (x) { return x.part_id === p.id; })[0];
-      return '<option value="' + p.id + '">' + esc(p.name) + " (" + (available(p) - (u ? u.qty : 0)) + " available, " + eur2(p.unit_cost) + " each)</option>";
-    }).join("") || "<option value=''>nothing in stock</option>";
+      return '<option value="' + p.id + '">' + th("opt.part", { name: esc(p.name), n: available(p) - (u ? u.qty : 0), price: eur2(p.unit_cost) }) + "</option>";
+    }).join("") || "<option value=''>" + th("opt.none") + "</option>";
     $("partAdd").disabled = !opts.length;
     calc();
   }
   function usedCost() { return used.reduce(function (s, u) { var p = partById(u.part_id) || {}; return s + u.qty * n(u.unit_cost != null ? u.unit_cost : p.unit_cost); }, 0); }
   function hintBox(c) {
     var h = editDeal && editDeal.price_hint, box = $("hintBox"), q = encodeURIComponent(dForm.querySelector("[name=item]").value || "");
-    var ebay = q ? ' · <a href="https://www.ebay.de/sch/i.html?_nkw=' + q + '&LH_Sold=1&LH_Complete=1" target="_blank" rel="noreferrer">eBay sold ↗</a>' : "";
-    if (!h) { box.hidden = !q; box.innerHTML = "Price hint after saving" + ebay; return; }
+    var ebay = q ? ' · <a href="https://www.ebay.de/sch/i.html?_nkw=' + q + '&LH_Sold=1&LH_Complete=1" target="_blank" rel="noreferrer">' + th("hint.ebay") + "</a>" : "";
+    if (!h) { box.hidden = !q; box.innerHTML = th("hint.after_save") + ebay; return; }
     box.hidden = false;
     if (!h.list) { box.innerHTML = esc(h.text) + ebay; return; }
-    box.innerHTML = "Suggestion: list at <b>" + h.list + " €</b>, not below <b>" + h.floor + " €</b> → profit " +
-      eur(h.floor - c, 1) + " to " + eur(h.list - c, 1) + '<div class="sub">' + esc(h.text.replace(/^[^(]*\(/, "(")) + ebay + "</div>";
+    box.innerHTML = th("hint.suggest", { list: "<b>" + eur(h.list) + "</b>", floor: "<b>" + eur(h.floor) + "</b>", lo: eur(h.floor - c, 1), hi: eur(h.list - c, 1) }) +
+      '<div class="sub">' + esc(h.text.replace(/^[^(]*\(/, "(")) + ebay + "</div>";
   }
   function calc() {
     var f = dForm.elements, lager = usedCost();
     var c = n(f.buy_price.value) + n(f.parts_cost.value) + n(f.other_cost.value) + lager;
     var sell = f.sell_price.value, g = has(sell) ? n(sell) - c : null, h = n(f.hours.value);
-    $("calc").innerHTML = "<div>invested<b>" + eur2(Math.round(c * 100) / 100) + "</b></div><div>of which stock parts<b>" + eur2(Math.round(lager * 100) / 100) +
-      "</b></div><div>profit<b class='" + cls(g) + "'>" + (g == null ? "–" : eur(g, 1)) + "</b></div><div>€/h<b class='" + cls(g) + "'>" +
+    $("calc").innerHTML = "<div>" + th("calc.invested") + "<b>" + eur2(Math.round(c * 100) / 100) + "</b></div><div>" + th("calc.stock_parts") + "<b>" + eur2(Math.round(lager * 100) / 100) +
+      "</b></div><div>" + th("calc.profit") + "<b class='" + cls(g) + "'>" + (g == null ? "–" : eur(g, 1)) + "</b></div><div>" + th("th.per_hour") + "<b class='" + cls(g) + "'>" +
       (g != null && h > 0 ? eur(g / h) : "–") + "</b></div>";
     hintBox(c);
   }
@@ -434,9 +441,9 @@ footer{margin-top:40px;color:var(--muted);font-size:.78rem}
     Array.prototype.forEach.call(dForm.elements, function (el) { if (el.name && has(src[el.name])) el.value = src[el.name]; });
     if (!d && !has(src.bought_date)) dForm.elements.bought_date.value = new Date().toISOString().slice(0, 10);
     used = d ? (d.parts || []).map(function (x) { return { part_id: x.part_id, qty: x.qty, unit_cost: x.unit_cost, name: x.name }; }) : [];
-    $("dTitle").textContent = d ? "Edit deal" : "New deal"; $("dDel").hidden = !d;
+    $("dTitle").textContent = t(d ? "dlg.edit_deal" : "dlg.new_deal"); $("dDel").hidden = !d;
     var e = src.est_profit, h = src.est_hours;
-    $("botEst").textContent = has(e) ? "Estimate: " + eur(n(e), 1) + " profit" + (has(h) ? " in " + h + " h" : "") : "";
+    $("botEst").textContent = has(e) ? t("est.text", { v: eur(n(e), 1) }) + (has(h) ? t("est.hours", { h: num(h) }) : "") : "";
     renderUsed(); $("dDlg").showModal();
   }
   $("partAdd").onclick = function () {
@@ -458,7 +465,7 @@ footer{margin-top:40px;color:var(--muted);font-size:.78rem}
       .then(function () { $("dDlg").close(); }).catch(function (err) { $("dErr").textContent = err.message; });
   });
   $("dDel").onclick = function () {
-    if (editDeal && confirm("Delete deal? Parts used from stock go back into stock."))
+    if (editDeal && confirm(t("confirm.deal")))
       api("DELETE", "api/deals/" + editDeal.id, {}).then(function () { $("dDlg").close(); }).catch(function (err) { $("dErr").textContent = err.message; });
   };
   $("newDeal").onclick = function () { openDeal(null); };
@@ -475,7 +482,7 @@ footer{margin-top:40px;color:var(--muted);font-size:.78rem}
     if (p) Array.prototype.forEach.call(pForm.elements, function (el) {
       if (!el.name) return; if (el.type === "checkbox") el.checked = !!p[el.name]; else el.value = has(p[el.name]) ? p[el.name] : "";
     });
-    $("pTitle").textContent = p ? "Edit part" : "New part"; $("pDel").hidden = !p; $("pDlg").showModal();
+    $("pTitle").textContent = t(p ? "dlg.edit_part" : "dlg.new_part"); $("pDel").hidden = !p; $("pDlg").showModal();
   }
   pForm.elements.unit_cost.addEventListener("input", function () { pForm.elements.estimated.checked = false; });
   pForm.addEventListener("submit", function (e) {
@@ -485,7 +492,7 @@ footer{margin-top:40px;color:var(--muted);font-size:.78rem}
       .then(function () { $("pDlg").close(); }).catch(function (err) { $("pErr").textContent = err.message; });
   });
   $("pDel").onclick = function () {
-    if (editPart && confirm("Delete part from the catalogue?"))
+    if (editPart && confirm(t("confirm.part")))
       api("DELETE", "api/parts/" + editPart.id, {}).then(function () { $("pDlg").close(); }).catch(function (err) { $("pErr").textContent = err.message; });
   };
   $("newPart").onclick = function () { openPart(null); };
@@ -510,7 +517,7 @@ footer{margin-top:40px;color:var(--muted);font-size:.78rem}
         market_group: q.get("grp") });
       history.replaceState(null, "", location.pathname + "#deals");
     }
-  }).catch(function (e) { $("gerr").textContent = "Loading failed: " + e.message; });
+  }).catch(function (e) { $("gerr").textContent = t("err.load", { msg: e.message }); });
 })();
 </script>
 </body></html>

@@ -114,7 +114,8 @@ def test_example_config_electronics_page(tmp_path):
 def test_german_page(tmp_path):
     raw = yaml.safe_load((ROOT / "config.example.yaml").read_text())
     el = raw["searches"]["electronics"]
-    cfg = make_cfg(tmp_path, {"electronics": {"title": "Elektronik", "web": el["web"]}}, locale="de")
+    web = {**el["web"], "copy_prompt": True}   # off by default since 0.2.1
+    cfg = make_cfg(tmp_path, {"electronics": {"title": "Elektronik", "web": web}}, locale="de")
     report = ("**Neu**\n- [A](https://x.invalid/1) – 10 €\n- [B](https://x.invalid/2) – 12 €\n\n"
               "**Preisänderungen**\n- [C](https://x.invalid/3): 20 € → 15 €\n\n**Weg**\n- D (5 €) – nicht mehr online\n")
     write_state(tmp_path, "electronics", [

@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+import deal_engine
+
 tomllib = pytest.importorskip("tomllib")
 
 REPO = Path(__file__).resolve().parent.parent
@@ -71,7 +73,7 @@ def test_pyproject_lists_only_deal_engine_packages():
     for p in pkgs:
         assert (REPO / p.replace(".", "/") / "__init__.py").exists(), p
     assert all(k.startswith("deal_engine") for k in st.get("package-data", {}))
-    assert data["project"]["version"] == "0.2.0"
+    assert data["project"]["version"] == deal_engine.__version__ == "0.2.1"
 
 
 def test_builtin_prompts_ship_with_the_package():

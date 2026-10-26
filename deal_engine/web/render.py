@@ -260,6 +260,11 @@ def cfg_for(name, sc=None, cfg=None):
     page = {"slug": str(get("slug", (str, int), name)), "title": txt(get("title", LABEL, sc.get("title") or name), loc),
             "tiers": {str(k): txt(v, loc) for k, v in get("tiers", dict, {"A": "A", "B": "B", "C": "C"}).items()},
             "deal_link": get("deal_link", bool, False), "loc": loc}
+    # "copy as prompt" button: off unless web.copy_prompt (global) or searches.<name>.web.copy_prompt
+    glob = ((cfg or {}).get("web") or {}).get("copy_prompt")
+    if glob is not None and not isinstance(glob, bool):
+        raise ConfigError(f"web.copy_prompt must be true or false, not {type(glob).__name__} ({glob!r})")
+    page["copy_prompt"] = get("copy_prompt", bool, bool(glob))
 
     page["columns"] = []
     for i, c in enumerate(entries("columns", [])):
@@ -709,8 +714,9 @@ def card(l, page, cfg):
     links = "".join(f'<a href="{esc(u)}" rel="noreferrer" target="_blank">{esc(host_of(u))} ↗</a>'
                     for u in (l.get("urls") or []))
     links += compare_links(l, cfg, loc)
-    links += (f'<button type="button" data-copy>{esc(ui(loc, "copy_prompt"))}</button>'
-              f'<textarea hidden>{esc(prompt_text(l, loc))}</textarea>')
+    if page.get("copy_prompt"):
+        links += (f'<button type="button" data-copy>{esc(ui(loc, "copy_prompt"))}</button>'
+                  f'<textarea hidden>{esc(prompt_text(l, loc))}</textarea>')
     if page.get("deal_link"):
         q = urlencode({k: v for k, v in {
             "item": l.get("title"), "price": l.get("price"), "link": (l.get("urls") or [""])[0],
