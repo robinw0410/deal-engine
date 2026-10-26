@@ -32,10 +32,45 @@ list, and serves everything on <http://127.0.0.1:8081/>:
 `make demo-de` runs the same demo with the German locale into `data/demo-de` (it does not start
 the server; `make serve-demo-de` serves it, deal list in German). Run the tests with `make test`.
 
-Everything lives in the `deal_engine` package; the commands below are run from the repository
-directory (elsewhere, `deal_engine` has to be importable, e.g. via `PYTHONPATH`).
-
 ![Deal list in demo mode](docs/screenshots/deals.png)
+
+## Installation
+
+Python 3.9 or newer; the only runtime dependency is PyYAML.
+
+**From the repository** (demo, tests, your own changes):
+
+```sh
+git clone https://github.com/robinw0410/deal-engine.git
+cd deal-engine
+pip install -r requirements.txt   # PyYAML, and pytest for the tests
+make demo
+```
+
+Everything lives in the `deal_engine` package. Run the commands from the repository directory;
+there `deal_engine` is importable without installing it.
+
+**As a package**, from a release tag:
+
+```sh
+pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.1"
+```
+
+This installs the `deal_engine` package including the built-in prompts and the deal list page.
+`config.example.yaml`, `profiles/` and the `Makefile` are not part of the package: copy
+`config.example.yaml` (as `config.yaml` for your own searches) and the profile it references
+(`profiles/electronics.md`) from the repository into your working directory.
+
+`python -m deal_engine …` (also `deal_engine.deals.deals_server` and `deal_engine.demo.run_demo`)
+takes the config from the **current working directory** (`./config.yaml`, then
+`./config.example.yaml`) unless `--config PATH` or `$DEAL_ENGINE_CONFIG` says otherwise; see
+[Configuration](#configuration). The demo without `make`, from a directory that contains
+`config.example.yaml`:
+
+```sh
+python -m deal_engine.demo.run_demo --days 21 --quiet --data data/demo
+DEAL_ENGINE_DATA_DIR=data/demo python -m deal_engine.deals.deals_server --config config.example.yaml --port 8081 --web-root data/demo/web
+```
 
 ## How it works
 
@@ -141,10 +176,12 @@ python -m deal_engine render                 # render the search pages
 python -m deal_engine history electronics    # tracking statistics per group
 python -m deal_engine validate listings.json # check a listings file
 python -m deal_engine adapters               # adapters this config can use, and where they come from
+python -m deal_engine --config my.yaml run   # --config goes before the command
 python -m deal_engine.deals.deals_server --web-root data/web
 ```
 
-`--web-root` of the deal server is relative to the working directory.
+`--web-root` of the deal server is relative to the working directory; `--locale en|de` overrides
+the config locale for the deal list and price hints.
 
 The LLM steps call the [Claude Code](https://docs.claude.com/en/docs/claude-code) CLI in print
 mode (`claude -p`) with only the Read/Write tools, because the evaluator has to read the
@@ -160,15 +197,17 @@ deal-engine (e.g. a service user), `~/.claude/settings.json`:
 ```json
 {"permissions": {"deny": ["Bash", "WebFetch", "WebSearch"]}}
 ```
- If the CLI is not available, the evaluation step fails and is reported as a problem in the
+
+If the CLI is not available, the evaluation step fails and is reported as a problem in the
 run report; collecting, tracking and market prices still work.
 
 What has actually been run (Claude Code 2.1.310, model `haiku`, 5 defective demo listings, no
 photos): evaluation of a batch of 3 candidates (about 35–55 s) and classification of 5 titles
 (about 13 s), twice; the result files were valid JSON both times and were merged into the state.
 Larger batches, photos and other models have not been tried in this repository. This was done
-with 0.1.x and has **not been re-run for 0.2.0** (new package layout, prompts moved to
-`deal_engine/core/prompts/<locale>/`, German prompts).
+with 0.1.x and has **not been re-run since**: not for 0.2.0 (new package layout, prompts moved to
+`deal_engine/core/prompts/<locale>/`, German prompts) and not for 0.2.1 (`--disallowedTools` on
+every call). The command lines are covered by the automated tests with a fake command.
 
 ## Extending deal-engine
 
@@ -344,8 +383,9 @@ ok|bad|unk|new, when}`), `sorts` (`{label, field, desc}`, the first is the defau
 (`{key, field}` or regex categories `{key, from, rules: [[label, regex], …], other}`), `groups`,
 `chips`, `orders`, `toggles` (`{key, label, field}` with `equals`, `min` or `max`) and
 `deal_link`. `copy_prompt: true` adds a "copy as prompt" button to every card (a plain-text summary
-of the listing for a chat with an assistant); it is off by default and can be switched on for all
-searches with the top-level `web.copy_prompt: true` (a search's own value wins). Labels are plain text or one text per locale (`{en: Profit, de: Gewinn}`); a missing
+of the listing for a chat with an assistant); it is off by default (since 0.2.1) and can be
+switched on for all searches with the top-level `web.copy_prompt: true` (a search's own value
+wins). Labels are plain text or one text per locale (`{en: Profit, de: Gewinn}`); a missing
 label is the locale's field label. A setting with a clearly wrong type stops with a configuration
 error naming the key. `config.example.yaml` has the full electronics page; a sketch for
 motorbikes whose profile returns `touring_score` and `gravel_score`:
