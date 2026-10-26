@@ -21,7 +21,7 @@ from adapters.base import Blocked
 from . import clock, history
 from . import config as config_mod
 from .filters import has_signal, passes
-from .groups import bundle_qty, match_group
+from .groups import bundle_qty, is_accessory, match_group
 from .listing import normalize
 from .market import due as market_due, refresh as market_refresh, resale_from_ask, settings as market_settings
 from .util import eur, load_json, num, save_json
@@ -182,6 +182,8 @@ def select(items, known, seen, market, sc, log=print):
             continue
         sig = has_signal(it, flt)
         g = match_group(it["title"], groups) if groups else None
+        if g and is_accessory(it["title"], mc.get("accessory_regex")):
+            continue   # "case for <device>" is not a deal on the device
         m = market.get(g["name"]) if g else None
         if m:
             it["market_group"], it["market_median"], it["market_n"] = g["name"], m["median"], m["n"]

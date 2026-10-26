@@ -25,6 +25,8 @@ def run(cfg, text, model, tools=("Read", "Write"), max_turns=30, timeout_min=Non
     """Run one prompt. Returns stdout; raises RuntimeError on a non-zero exit or timeout."""
     lc = cfg.get("llm") or {}
     cmd = list(lc.get("command") or ["claude", "-p"]) + ["--model", model, "--max-turns", str(max_turns)]
+    # --tools limits which tools exist at all, --allowedTools pre-approves them (no prompts in -p mode)
+    cmd += ["--tools", *(tools or [""])]
     if tools:
         cmd += ["--allowedTools", *tools]
     cmd += [str(a) for a in lc.get("extra_args") or []]

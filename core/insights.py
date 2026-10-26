@@ -33,9 +33,40 @@ def tokens(t):
     return {w for w in re.findall(r"[a-z0-9]+", str(t).lower()) if len(w) > 1 and w not in STOP}
 
 
-def similar(a, b):
+def similar(a, b, threshold=0.75):
     ta, tb = tokens(a), tokens(b)
-    return bool(ta and tb) and len(ta & tb) / len(ta | tb) >= 0.6
+    return bool(ta and tb) and len(ta & tb) / len(ta | tb) >= threshold
+
+
+def _place(s):
+    return re.sub(r"\s+", " ", str(s or "")).strip().lower()
+
+
+def find_relist(con, search, key, relist_days=45):
+    """A disappeared listing that is probably the same item as listing `key`, or None.
+
+    Only listings of the same source that disappeared before `key` appeared are considered.
+    Strong signal: the same photo URL. Otherwise everything has to match: same location text,
+    same market group, price within ±15 % and a title similarity (Jaccard) of at least 0.75.
+    Distance from home alone is no evidence: two towns 40 km away can be 80 km apart."""
+    row = con.execute("SELECT source, COALESCE(published, first_seen), title, grp, price, image, location "
+                      "FROM listing WHERE uid=?", (key,)).fetchone()
+    if not row:
+        return None
+    source, start, title, grp, price, image, location = row
+    since = str(clock.today() - timedelta(days=relist_days))
+    for o in con.execute("""SELECT title, price, gone_date, COALESCE(published, first_seen), image, location, grp
+                            FROM listing WHERE search=? AND source=? AND status='gone' AND uid<>?
+                              AND gone_date>=? AND gone_date<=?
+                            ORDER BY gone_date DESC""", (search, source, key, since, start)):
+        o_title, o_price, o_gone, o_start, o_img, o_loc, o_grp = o
+        if image and o_img and image == o_img:
+            return {"title": o_title, "price": o_price, "gone": o_gone, "start": o_start, "by": "photo"}
+        same_place = bool(_place(location)) and _place(location) == _place(o_loc)
+        close_price = bool(o_price and price and 0.85 <= price / o_price <= 1.15)
+        if same_place and close_price and grp is not None and grp == o_grp and similar(title, o_title):
+            return {"title": o_title, "price": o_price, "gone": o_gone, "start": o_start, "by": "text"}
+    return None
 
 
 def classified(con, key, title):
@@ -57,7 +88,6 @@ def apply(cfg, sc, paths, log=print):
     formula = bool((sc.get("score") or {}).get("enabled"))
     con = history.connect(paths["history"])
     sold = history.sold_by_group(con, name, c["window_days"])
-    today = clock.today()
 
     n_sold = n_relist = 0
     for l in state.get("listings", []):
@@ -73,24 +103,16 @@ def apply(cfg, sc, paths, log=print):
                                 and (h.get("price") or 0) > (l.get("price") or 0)))
         l["price_drops"] = drops
 
-        # 2. relisted? Same first image is certain; otherwise title, group, distance and price must match
+        # 2. relisted? (see find_relist)
         l.pop("relisted", None)
-        if row:
-            for o_title, o_price, o_gone, o_start, o_img, o_dist, o_grp in con.execute(
-                    """SELECT title, price, gone_date, COALESCE(published, first_seen), image, distance_km, grp
-                       FROM listing WHERE search=? AND status='gone' AND uid<>? AND gone_date>=?
-                       ORDER BY gone_date DESC""", (name, key, str(today - timedelta(days=c["relist_days"])))):
-                same_img = bool(row[5] and o_img and row[5] == o_img)
-                near = row[6] is not None and o_dist is not None and abs(row[6] - o_dist) <= 3
-                close_price = bool(o_price and row[4] and 0.85 <= row[4] / o_price <= 1.15)
-                if same_img or (near and close_price and row[3] == o_grp and similar(row[2], o_title)):
-                    l["relisted"] = (f"probably relisted: a similar listing was online until {o_gone} "
-                                     f"(since {o_start}, last {o_price:.0f} €)")
-                    od = days(o_start)
-                    if od is not None and (l["days_online"] is None or od > l["days_online"]):
-                        l["days_online"] = od
-                    n_relist += 1
-                    break
+        rel = find_relist(con, name, key, c["relist_days"]) if row else None
+        if rel:
+            l["relisted"] = (f"probably relisted ({'same photo' if rel['by'] == 'photo' else 'same place, similar title and price'}): "
+                             f"a listing was online until {rel['gone']} (since {rel['start']}, last {rel['price']:.0f} €)")
+            od = days(rel["start"])
+            if od is not None and (l["days_online"] is None or od > l["days_online"]):
+                l["days_online"] = od
+            n_relist += 1
 
         # 3a. market group and asking-price estimate, fresh on every run
         qty = 1

@@ -8,3 +8,5 @@ __pycache__/
 *.db
 *.db-*
 *.tmp
+build/
+*.egg-info/

@@ -57,8 +57,15 @@ def bundle_qty(title, group=None):
     return 1
 
 
+# "Switch Lite with charger", "PS5 incl. cable + case": accessories that come WITH a device
+WITH_CLAUSE = re.compile(r"(\bwith\b|\bincl\b\.?|\bincluding\b|\+|&|\band\b)\s*(?:\d+\s*)?(?:x\s*)?(?:[\w.-]+\s+){0,2}?"
+                         r"[\w.-]+(?:\s+(?:and|&|\+|,)\s*[\w.-]+)*", re.I)
+
+
 def is_accessory(title, accessory_regex=None):
-    return bool(re.search(accessory_regex or ACCESSORY, title or "", re.I))
+    """The listing itself is an accessory. Accessories mentioned as extras of a device don't count."""
+    t = WITH_CLAUSE.sub(" ", title or "")
+    return bool(re.search(accessory_regex or ACCESSORY, t, re.I))
 
 
 def market_group(title, price, groups, defect=False, accessory_regex=None):

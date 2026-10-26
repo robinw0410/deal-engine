@@ -42,6 +42,8 @@ def connect(db):
     con = sqlite3.connect(db, timeout=60)
     con.execute("PRAGMA journal_mode=WAL")
     con.executescript(SCHEMA)
+    if "location" not in [r[1] for r in con.execute("PRAGMA table_info(listing)")]:
+        con.execute("ALTER TABLE listing ADD COLUMN location TEXT")   # databases from before 0.1.0
     return con
 
 
@@ -58,19 +60,21 @@ def _upsert(con, search, it, grp, defect):
     row = con.execute("SELECT price FROM listing WHERE uid=?", (key,)).fetchone()
     if row is None:
         con.execute("""INSERT INTO listing(uid, source, source_id, search, grp, title, defect, published,
-                       first_seen, last_seen, first_price, price, private, shipping, distance_km, image)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       first_seen, last_seen, first_price, price, private, shipping, distance_km, image, location)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (key, it["source"], it["source_id"], search, grp, (it.get("title") or "")[:200], defect,
                      it.get("_published"), today, today, p, p, _flag(it.get("private")),
-                     _flag(it.get("shipping_possible")), it.get("distance_km"), it.get("_image")))
+                     _flag(it.get("shipping_possible")), it.get("distance_km"), it.get("_image"),
+                     (it.get("location") or "")[:120] or None))
         if p is not None:
             con.execute("INSERT OR REPLACE INTO price VALUES (?,?,?)", (key, today, p))
         return
     old_p = row[0]
     con.execute("""UPDATE listing SET last_seen=?, price=?, title=?, grp=COALESCE(?, grp), defect=?,
-                   status='active', gone_date=NULL, image=COALESCE(image, ?) WHERE uid=?""",
+                   status='active', gone_date=NULL, image=COALESCE(image, ?), location=COALESCE(location, ?)
+                   WHERE uid=?""",
                 (today, p if p is not None else old_p, (it.get("title") or "")[:200], grp, defect,
-                 it.get("_image"), key))
+                 it.get("_image"), (it.get("location") or "")[:120] or None, key))
     if p is not None and old_p is not None and abs(p - old_p) >= 1:
         con.execute("INSERT OR REPLACE INTO price VALUES (?,?,?)", (key, today, p))
 

@@ -36,6 +36,20 @@ def test_market_group_excludes_bundles_accessories_and_outliers():
     assert market_group("DualSense controller", 5, GROUPS, defect=True)["name"] == "DualSense"
 
 
+@pytest.mark.parametrize("title,acc", [
+    ("charging station for DualSense", True),
+    ("case for Switch Lite", True),
+    ("DualSense thumb grips set", True),
+    ("Charger with cable for PS5", True),
+    ("Switch Lite white with charger", False),      # accessory that comes with the device
+    ("PS5 incl. cable + case", False),
+    ("Steam Deck with case and charger", False),
+])
+def test_accessory_vs_device_with_accessories(title, acc):
+    from core.groups import is_accessory
+    assert is_accessory(title) is acc
+
+
 def test_match_group_exclude():
     assert match_group("PS5 controller", GROUPS)["name"] == "DualSense"
     assert match_group("PS5 Disc Edition", GROUPS)["name"] == "PS5"

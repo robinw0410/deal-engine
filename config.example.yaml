@@ -65,7 +65,8 @@ searches:
       max_price: 800
       max_age_days: 30
       max_pickup_km: 80                # pickup-only listings further away are skipped
-      exclude_title_regex: "\\b(wanted|buying|swap|trade)\\b|repair service|\\bgames?\\b|\\bcase\\b|empty box|screen protector|thumb grips|charging station"
+      # accessories of a market group are skipped automatically (core/groups.py, ACCESSORY)
+      exclude_title_regex: "\\b(wanted|buying|swap|trade)\\b|repair service"
       # defect signal: listings with it are repair candidates, without it flips
       signal_regex: "defect|broken|for parts|faulty|drift|no picture|no hdmi|does not charge|won't turn on|overheat|loud fan|cracked|liquid damage|without (ram|ssd)|battery (service|worn)|not working|shuts down|blue light|flicker|missing"
       body_signal_regex: "sold as defective|for parts|(?<!not )broken|not working"

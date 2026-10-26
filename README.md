@@ -128,8 +128,16 @@ python -m deals.deals_server --web-root data/web
 The LLM steps call the [Claude Code](https://docs.claude.com/en/docs/claude-code) CLI in print
 mode (`claude -p`) with only the Read/Write tools, because the evaluator has to read the
 candidate file and photos and write one result file. Command and arguments are configurable
-under `llm:`. If the CLI is not available, the evaluation step fails and is reported as a
-problem in the run report; collecting, tracking and market prices still work.
+under `llm:`. Each call gets `--tools` (only Read/Write exist for the evaluator, no tools for
+classification), `--allowedTools` and, by default, `--strict-mcp-config --mcp-config '{"mcpServers": {}}'`
+so that no MCP servers are loaded. Your own Claude Code settings and hooks still apply to these
+runs. If the CLI is not available, the evaluation step fails and is reported as a problem in the
+run report; collecting, tracking and market prices still work.
+
+What has actually been run (Claude Code 2.1.310, model `haiku`, 5 defective demo listings, no
+photos): evaluation of a batch of 3 candidates (about 35–55 s) and classification of 5 titles
+(about 13 s), twice; the result files were valid JSON both times and were merged into the state.
+Larger batches, photos and other models have not been tried in this repository.
 
 ## Data sources
 
@@ -145,8 +153,7 @@ protection). In particular:
 - Store item data only. Do not collect personal data of sellers; the listing format has no
   fields for it.
 
-This project ships no adapters for platforms without an official API, and pull requests adding
-scrapers for such platforms will not be accepted.
+Adapters for platforms without an official API are out of scope for this repository.
 
 ### eBay
 
@@ -157,6 +164,15 @@ comply with the **eBay API License Agreement** and the call limits of your key. 
 stores item data only (title, price, condition, shipping cost, item location, item number,
 description, images, item aspects) and no user data (no seller name, user id or feedback).
 Without credentials the adapter stops with an error; there is no fallback to anything else.
+
+Live check (writes nothing; credentials only from the environment):
+
+```sh
+python -m adapters.ebay "your search" --markets EBAY_DE --limit 5 [--country DE --zip 10115]
+```
+
+It requests a token, runs one search per marketplace, prints the items, and calls getItem and
+`check()` for the first one.
 
 ### Your own adapter
 
@@ -172,13 +188,14 @@ the [listing format](docs/listing-format.md), register the class in `adapters/__
   parts, hours, risk), and its weights reflect one person's repair-and-resell use case.
 - **Regex rules are language- and market-specific.** Groups, filters, accessory and bundle
   detection come with English defaults and have to be adapted to your market.
-- **LLM evaluations can be wrong**, also on photos. The evaluation and classification steps
-  depend on the Claude Code CLI; in this repository they are covered only with a fake command in
-  the tests, not with a real model run.
+- **LLM evaluations can be wrong**, also on photos, and differ between runs (the same 3 demo
+  candidates: 1 of 3 accepted in one `haiku` run, 0 of 3 in the next). The automated tests use a fake
+  command; the real CLI was only run manually as described above.
 - The eBay adapter has not been run against the live API in this repository. It is adapted from
   code that was, but this version is untested against eBay.
-- Relist detection is fuzzy (same photo, or similar title + group + distance + price) and can
-  produce false positives.
+- Without a photo URL, relist detection is text-based (same source and place, same group, price
+  within ±15 %, similar title). Two different items with generic titles from the same place can
+  still be taken for one.
 - The deal server has no authentication and binds to 127.0.0.1. Put authentication in front of
   it before exposing it anywhere.
 

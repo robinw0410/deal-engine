@@ -41,8 +41,11 @@ WORKING = ["like new", "good condition", "barely used", "boxed", "with original 
            "minor scratches", ""]
 ACCESSORIES = ["case for {d}", "charging station for {d}", "{d} empty box", "screen protector {d}",
                "{d} thumb grips set"]
-TOWNS = ["Northfield", "Eastbrook", "Millbrook", "Riverside", "Oakdale", "Hillcrest", "Lakeview", "Stonebridge",
-         "Westwood", "Brookhaven", "Fairmont", "Ashford"]
+COLOURS = ["", "", "white", "black", "grey", "blue", "red", "silver", "midnight", "camo"]
+EXTRAS = ["", "", "", "with charger", "incl. cable", "with case", "from non-smoking home", "2 years old",
+          "with receipt", "+ 1 game", "pickup preferred", "price negotiable", "urgent", "from collection"]
+PLACE_A = ["North", "East", "Mill", "River", "Oak", "Hill", "Lake", "Stone", "West", "Brook", "Fair", "Ash"]
+PLACE_B = ["field", "brook", "dale", "crest", "view", "bridge", "wood", "haven", "mont", "ford"]
 RISKS = ["low", "low", "medium", "medium", "high"]
 
 
@@ -58,15 +61,22 @@ class World:
         self.next_id = 100001
         self.listings = {}   # source_id -> listing (incl. internal keys starting with "_")
         self.truth = {}
+        # fictional places with fixed coordinates around home (same place = same distance)
+        names = [f"{a}{b}" for a in PLACE_A for b in PLACE_B]
+        self.rng.shuffle(names)
+        self.places = []
+        for n in names[:80]:
+            dist = abs(self.rng.gauss(0, 55)) + 3
+            ang = self.rng.uniform(0, 2 * math.pi)
+            lat = self.home[0] + dist / 111.0 * math.sin(ang)
+            lon = self.home[1] + dist / (111.0 * math.cos(math.radians(self.home[0]))) * math.cos(ang)
+            self.places.append((n, lat, lon))
 
     # ------------------------------------------------------------------ one listing
     def _place(self):
         r = self.rng
-        dist = abs(r.gauss(0, 55)) + 3
-        ang = r.uniform(0, 2 * math.pi)
-        lat = self.home[0] + dist / 111.0 * math.sin(ang)
-        lon = self.home[1] + dist / (111.0 * math.cos(math.radians(self.home[0]))) * math.cos(ang)
-        return round(lat, 4), round(lon, 4), r.choice(TOWNS)
+        name, lat, lon = r.choice(self.places)
+        return round(lat + r.uniform(-0.01, 0.01), 4), round(lon + r.uniform(-0.01, 0.01), 4), name
 
     def new_listing(self, day):
         r = self.rng
@@ -75,7 +85,13 @@ class World:
         sid = str(self.next_id)
         self.next_id += 1
         lat, lon, town = self._place()
+        # real titles vary a lot (colour, extras, wording); a handful of fixed titles would make
+        # different items look identical
         title = r.choice(variants)
+        colour = r.choice(COLOURS)
+        if not any(c and c in title.lower() for c in COLOURS):   # "Switch OLED white" has its colour
+            title = f"{title} {colour}".strip()
+        title = f"{title} {r.choice(EXTRAS)}".strip()
         desc = ""
         truth = {"group": name, "kind": kind, "defect": None, "parts": 0, "hours": 0.8, "risk": "low",
                  "fraud": False, "typical": typical}

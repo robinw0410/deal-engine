@@ -231,3 +231,53 @@ class EbayAdapter(Adapter):
         if d.get("itemLocation"):
             out["location"] = _loc(d)
         return out
+
+
+def probe(argv=None):
+    """Live check of the adapter: token, one search per marketplace, one getItem, one check().
+    Prints item data only and writes nothing. Credentials only from the environment."""
+    import argparse
+    import time as _time
+    ap = argparse.ArgumentParser(prog="python -m adapters.ebay")
+    ap.add_argument("keyword")
+    ap.add_argument("--markets", nargs="+", default=["EBAY_DE"])
+    ap.add_argument("--limit", type=int, default=5)
+    ap.add_argument("--country", help="delivery country (default: location.country from the config)")
+    ap.add_argument("--zip", help="delivery postal code (default: location.postal_code from the config)")
+    ap.add_argument("--config")
+    a = ap.parse_args(argv)
+    from core import config as config_mod
+    cfg = config_mod.load(a.config)
+    loc = dict(cfg.get("location") or {})
+    if a.country:
+        loc["country"] = a.country
+    if a.zip:
+        loc["postal_code"] = a.zip
+    cfg = {**cfg, "location": loc}
+    sc = {"_name": "probe", "ebay": {"markets": a.markets, "limit": a.limit, "include_auctions": True}}
+    ad = EbayAdapter(cfg, sc)
+    t = _time.time()
+    ad._auth()
+    print(f"token ok ({_time.time() - t:.1f}s)")
+    found = []
+    for m in a.markets:
+        ad.markets = [m]
+        res = ad.search({"keyword": a.keyword})
+        print(f"{m} '{a.keyword}': {len(res)} items")
+        for li in res:
+            print(f"  {li['source_id']}  {li['price']} + {li['shipping_cost']} shipping  {li['title'][:60]}  "
+                  f"| {li['condition']} | {li['location']}")
+        found += res
+    if found:
+        it = {"source_id": found[0]["source_id"]}
+        d = ad.details(it, 6)
+        print(f"getItem {it['source_id']}: description {len(d.get('description', ''))} chars, "
+              f"{len(d.get('images', []))} images, {len(d.get('attrs', {}))} aspects, location {d.get('location')!r}")
+        print(f"check {it['source_id']}: {ad.check(it['source_id'])}")
+    print(f"{ad.requests} API requests")
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(probe())
