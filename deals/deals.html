@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>Deals &amp; Parts</title>
+<style>
+:root{--bg:#f4f2ec;--card:#fffdf8;--fg:#1f2420;--muted:#6c6f68;--line:#e2ded3;--acc:#2f5d46;--acc-soft:#e3ece5;
+ --ok:#2f6b4f;--ok-bg:#e2efe6;--bad:#9b3b26;--bad-bg:#f5e3dc;--unk:#7a6522;--unk-bg:#f3ecd6;--new:#1f5f8b;--new-bg:#e1ecf5;
+ --shadow:0 1px 2px rgba(30,30,20,.06),0 4px 16px rgba(30,30,20,.05)}
+@media (prefers-color-scheme:dark){:root{--bg:#141614;--card:#1c1f1c;--fg:#e9ebe6;--muted:#999d94;--line:#2e322d;
+ --acc:#8cc6a4;--acc-soft:#22302a;--ok:#8cc6a4;--ok-bg:#1f3128;--bad:#e79a82;--bad-bg:#3a2520;--unk:#d9c27a;--unk-bg:#343020;
+ --new:#7fb8e0;--new-bg:#1d2a35;--shadow:none}}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:980px;margin:0 auto;padding:16px 16px 64px}
+a{color:var(--acc)}
+.num,.tnum{font-variant-numeric:tabular-nums}
+nav.site{display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap}
+nav.site a{padding:6px 12px;border-radius:999px;text-decoration:none;color:var(--muted);border:1px solid var(--line);font-size:.9rem}
+nav.site a.active{background:var(--acc);border-color:var(--acc);color:var(--card)}
+h1{font:600 1.7rem/1.2 Georgia,"Iowan Old Style",serif;margin:0}
+h2{font:600 1.05rem/1.3 Georgia,serif;margin:0}
+.sub{color:var(--muted);font-size:.85rem}
+.head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+
+.tabs{display:inline-flex;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:3px;gap:2px}
+.tabs button{border:0;background:none;padding:7px 14px;border-radius:9px;font:inherit;font-size:.9rem;color:var(--muted);cursor:pointer}
+.tabs button.on{background:var(--acc);color:var(--card);font-weight:600}
+.tabs small{opacity:.75;margin-left:4px}
+
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:4px 0 22px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:var(--shadow)}
+.tile .v{font-size:1.45rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.tile .l{color:var(--muted);font-size:.78rem}
+.pos{color:var(--ok)}.neg{color:var(--bad)}
+
+.section{margin:26px 0 10px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:var(--shadow)}
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+th{text-align:left;font-weight:500;color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;padding:9px 12px 7px;border-bottom:1px solid var(--line)}
+td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right;white-space:nowrap}
+.empty{padding:22px;text-align:center;color:var(--muted)}
+
+.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:.72rem;font-weight:600;white-space:nowrap}
+.s-sold{background:var(--ok-bg);color:var(--ok)}.s-scrapped{background:var(--bad-bg);color:var(--bad)}
+.s-bought{background:var(--unk-bg);color:var(--unk)}.s-in-progress{background:var(--new-bg);color:var(--new)}
+.s-listed{background:var(--acc-soft);color:var(--acc)}
+.est{background:var(--unk-bg);color:var(--unk);font-weight:500}
+
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--card);color:var(--muted);border-radius:999px;padding:4px 11px;font:inherit;font-size:.82rem;cursor:pointer}
+.chip.on{background:var(--acc-soft);border-color:var(--acc);color:var(--acc);font-weight:600}
+.tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+input,select,textarea{font:inherit;font-size:.92rem;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 9px;width:100%}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--acc);outline-offset:-1px}
+.search{width:180px}
+button{font:inherit;font-size:.9rem;border-radius:8px;padding:7px 14px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+button.primary{background:var(--acc);border-color:var(--acc);color:var(--card);font-weight:600}
+button.ghost{border-color:transparent;background:none;color:var(--acc);padding:4px 6px}
+button.danger{color:var(--bad)}
+button:disabled{opacity:.4;cursor:default}
+
+/* deal list */
+.deal{display:grid;grid-template-columns:1fr auto;gap:2px 14px;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer}
+.deal:last-child{border-bottom:0}
+.deal:hover{background:var(--bg)}
+.deal .t{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.deal .m{color:var(--muted);font-size:.8rem;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.deal .r{text-align:right;grid-row:1/3;grid-column:2;align-self:center}
+.deal .g{font-weight:700;font-size:1.05rem;font-variant-numeric:tabular-nums}
+.deal .h{color:var(--muted);font-size:.78rem;font-variant-numeric:tabular-nums}
+.tag{font-size:.72rem;border:1px solid var(--line);border-radius:6px;padding:0 6px;color:var(--muted)}
+
+/* parts */
+.stockn{font-weight:700;font-size:1.05rem;font-variant-numeric:tabular-nums}
+.stockn.zero{color:var(--muted);font-weight:400}
+.pname{font-weight:600}.pspec{color:var(--muted);font-size:.8rem}
+@media (max-width:640px){.opt{display:none}.search{width:130px}td{padding:8px 9px}td.num .ghost{display:block;margin-left:auto;padding:3px 0}}
+.box{overflow-x:auto}
+
+/* dialogs */
+dialog{border:0;border-radius:16px;padding:0;width:min(640px,calc(100vw - 24px));background:var(--card);color:var(--fg);box-shadow:0 20px 60px rgba(0,0,0,.25)}
+dialog::backdrop{background:rgba(20,22,20,.45)}
+.dh{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}
+.db{padding:14px 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;max-height:70vh;overflow:auto}
+.df{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.df .sp{flex:1}
+label{display:flex;flex-direction:column;gap:3px;font-size:.76rem;color:var(--muted)}
+label.wide,.wide{grid-column:1/-1}
+label.check{flex-direction:row;align-items:center;gap:6px;font-size:.85rem;color:var(--fg)}
+label.check input{width:auto}
+.err{color:var(--bad);font-size:.85rem}
+.fs{border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;gap:8px}
+.fs .row{display:grid;grid-template-columns:1fr 70px auto;gap:6px}
+.used{display:flex;gap:6px;flex-wrap:wrap}
+.used span{background:var(--acc-soft);color:var(--acc);border-radius:999px;padding:2px 4px 2px 10px;font-size:.82rem;display:inline-flex;align-items:center;gap:2px}
+.used button{padding:0 6px;border:0;background:none;color:inherit}
+.calc{background:var(--bg);border-radius:10px;padding:10px 12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px;font-size:.85rem}
+.calc b{display:block;font-size:1.05rem;font-variant-numeric:tabular-nums}
+.botest{font-size:.82rem;color:var(--muted)}
+.hint{font-size:.8rem;color:var(--acc);margin-top:2px}
+.hintbox{background:var(--acc-soft);color:var(--fg);border-radius:10px;padding:9px 12px;font-size:.85rem}
+.hintbox b{font-variant-numeric:tabular-nums}
+footer{margin-top:40px;color:var(--muted);font-size:.78rem}
+[hidden]{display:none!important}
+</style></head><body><main>
+<nav class="site"><a href="../">Search pages</a><a href="./" class="active">Deals</a></nav>
+
+<div class="head">
+  <div><h1>Deals &amp; Parts</h1><div class="sub">Profit = sale − purchase − parts − other costs</div></div>
+  <div class="tabs" role="tablist">
+    <button data-tab="overview">Overview</button><button data-tab="deals">Deals<small id="nOpen"></small></button><button data-tab="stock">Parts<small id="nStock"></small></button>
+  </div>
+</div>
+<p class="err" id="gerr"></p>
+
+<!-- Overview -->
+<section id="overview" hidden>
+  <div class="tiles" id="tiles"></div>
+  <div class="section"><h2>By category <span class="sub">closed deals</span></h2></div>
+  <div class="box"><table><thead><tr><th>Category</th><th class="num">Deals</th><th class="num">Profit</th>
+    <th class="num opt">Ø per deal</th><th class="num">€/h</th><th class="num opt">Scrapped</th></tr></thead><tbody id="cats"></tbody></table></div>
+  <div class="section"><h2>Estimate vs. result</h2><span class="sub" id="calSum"></span></div>
+  <div class="box"><table><thead><tr><th>Deal</th><th class="num">estimated</th><th class="num">actual</th><th class="num">diff.</th>
+    <th class="num opt">h est./actual</th></tr></thead><tbody id="cal"></tbody></table></div>
+</section>
+
+<!-- Deals -->
+<section id="deals" hidden>
+  <div class="section">
+    <div class="chips" id="dfilter"><button class="chip" data-f="open">open</button><button class="chip" data-f="sold">sold</button><button class="chip" data-f="scrapped">scrapped</button><button class="chip" data-f="">all</button></div>
+    <button class="primary" id="newDeal">+ New deal</button>
+  </div>
+  <div class="box" id="dlist"></div>
+</section>
+
+<!-- Parts -->
+<section id="stock" hidden>
+  <div class="section">
+    <div class="tools"><div class="chips" id="pfilter"><button class="chip" data-f="stock">in stock</button><button class="chip" data-f="">whole catalogue</button></div>
+      <input class="search" id="psearch" type="search" placeholder="Search …" aria-label="Search parts"></div>
+    <div class="tools"><button id="newPart">+ Part (catalogue only)</button><button class="primary" id="newBuy">+ Book purchase</button></div>
+  </div>
+  <div class="box"><table><thead><tr><th>Part</th><th class="opt">fits</th><th class="num">Price</th><th class="num opt">Install</th><th class="num">Stock</th><th></th></tr></thead>
+    <tbody id="plist"></tbody></table></div>
+  <p class="sub" id="pfoot"></p>
+  <div class="section"><h2>Purchases</h2><span class="sub">Unit cost = total ÷ quantity, averaged over several purchases</span></div>
+  <div class="box"><table><thead><tr><th>Date</th><th>Part</th><th class="num">Qty</th><th class="num">Total</th><th class="num opt">per unit</th><th class="opt">Source</th><th></th></tr></thead>
+    <tbody id="buys"></tbody></table></div>
+  <p class="sub">With <code>python -m deals.deals_server --prompt-block</code> the catalogue can be added to the evaluation prompt: its prices and installation times replace the evaluator's estimates, parts in stock count as 0 €. "estimate" means: initial value, no purchase booked yet.</p>
+</section>
+
+<!-- Deal dialog -->
+<dialog id="dDlg"><form id="dForm" method="dialog" autocomplete="off">
+  <div class="dh"><h2 id="dTitle">New deal</h2><button type="button" class="ghost" data-close>Close</button></div>
+  <div class="db">
+    <label class="wide">Item / description<input name="item" required maxlength="200" placeholder="e.g. handheld console, stick drift"></label>
+    <label>Category<input name="category" list="catlist" maxlength="60"></label>
+    <label>Status<select name="status"><option>bought</option><option>in progress</option><option>listed</option><option>sold</option><option>scrapped</option></select></label>
+    <label>Purchase (€)<input name="buy_price" inputmode="decimal"></label>
+    <label>Other (€)<input name="other_cost" inputmode="decimal" placeholder="shipping, fees, travel"></label>
+    <div class="fs wide"><div class="sub">Use parts from stock</div>
+      <div class="used" id="usedParts"></div>
+      <div class="row"><select id="partSel" aria-label="Part"></select><input id="partQty" type="number" min="1" value="1" aria-label="Quantity"><button type="button" id="partAdd">Add</button></div>
+      <label>Parts bought separately (€)<input name="parts_cost" inputmode="decimal" placeholder="not from stock"></label>
+    </div>
+    <label>Work (h)<input name="hours" inputmode="decimal" placeholder="incl. pickup, listing"></label>
+    <label>Sale (€)<input name="sell_price" inputmode="decimal"></label>
+    <label>Bought on<input name="bought_date" type="date"></label>
+    <label>Sold on<input name="sold_date" type="date"></label>
+    <label class="wide">Link to the listing<input name="link" type="url" maxlength="500"></label>
+    <label class="wide">Notes<textarea name="notes" rows="2" maxlength="1000" placeholder="What was broken, what did you do?"></textarea></label>
+    <label>Market group<input name="market_group" list="grplist" maxlength="60" placeholder="automatic from the description"></label>
+    <div class="hintbox wide" id="hintBox" hidden></div>
+    <div class="calc wide" id="calc"></div>
+    <div class="botest wide" id="botEst"></div>
+    <input type="hidden" name="listing_id"><input type="hidden" name="est_profit"><input type="hidden" name="est_hours">
+  </div>
+  <div class="df"><button type="button" class="danger ghost" id="dDel" hidden>Delete</button><span class="err" id="dErr"></span><span class="sp"></span>
+    <button type="button" data-close>Cancel</button><button class="primary" type="submit">Save</button></div>
+</form></dialog>
+
+<!-- Part dialog -->
+<dialog id="pDlg"><form id="pForm" method="dialog" autocomplete="off">
+  <div class="dh"><h2 id="pTitle">New part</h2><button type="button" class="ghost" data-close>Close</button></div>
+  <div class="db">
+    <label class="wide">Name<input name="name" required maxlength="120" placeholder="e.g. thumbstick module"></label>
+    <label>Fits<input name="device" maxlength="120" placeholder="e.g. which devices"></label>
+    <label>Specification<input name="spec" maxlength="200"></label>
+    <label>Price per unit (€)<input name="unit_cost" inputmode="decimal"></label>
+    <label>Stock (correction only)<input name="qty" type="number" min="0" value="0"></label>
+    <label>Install time per unit (min)<input name="install_min" type="number" min="0"></label>
+    <label class="check"><input type="checkbox" name="estimated"> price is only an estimate</label>
+    <label class="wide">Supplier (link)<input name="link" type="url" maxlength="500"></label>
+    <label class="wide">Note<input name="notes" maxlength="300"></label>
+  </div>
+  <div class="df"><button type="button" class="danger ghost" id="pDel" hidden>Delete</button><span class="err" id="pErr"></span><span class="sp"></span>
+    <button type="button" data-close>Cancel</button><button class="primary" type="submit">Save</button></div>
+</form></dialog>
+<!-- Purchase dialog -->
+<dialog id="bDlg"><form id="bForm" method="dialog" autocomplete="off">
+  <div class="dh"><h2>Book purchase</h2><button type="button" class="ghost" data-close>Close</button></div>
+  <div class="db">
+    <label class="wide">Part<select name="part_id" id="bPart"></select></label>
+    <div class="fs wide" id="bNew" hidden><div class="sub">New part</div>
+      <label>Name<input name="np_name" maxlength="120" placeholder="e.g. hall effect stick"></label>
+      <label>Fits<input name="np_device" maxlength="120"></label>
+      <label>Specification<input name="np_spec" maxlength="200"></label>
+      <label>Install time per unit (min)<input name="np_install_min" type="number" min="0"></label>
+    </div>
+    <label>Quantity<input name="qty" type="number" min="1" value="1" required></label>
+    <label>Total incl. shipping (€)<input name="total_cost" inputmode="decimal" required></label>
+    <label>Bought on<input name="date" type="date"></label>
+    <label class="wide">Source<input name="source" maxlength="500" placeholder="link or shop name"></label>
+    <div class="calc wide" id="bCalc"></div>
+  </div>
+  <div class="df"><span class="err" id="bErr"></span><span class="sp"></span>
+    <button type="button" data-close>Cancel</button><button class="primary" type="submit">Book</button></div>
+</form></dialog>
+<datalist id="catlist"></datalist><datalist id="grplist"></datalist>
+<footer>Data: state/deals.db in the data directory.</footer>
+</main>
+<script>
+(function () {
+  "use strict";
+  var S = { deals: [], parts: [], purchases: [] }, tab = "deals", dFilter = "open", pFilter = "stock", editDeal = null, editPart = null, used = [];
+  var $ = function (id) { return document.getElementById(id); };
+  var n = function (v) { v = parseFloat(String(v == null ? "" : v).replace(",", ".")); return isNaN(v) ? 0 : v; };
+  var has = function (v) { return v !== null && v !== undefined && v !== ""; };
+  function eur(v, sign) { if (!has(v)) return "–"; var r = Math.round(v); return (sign && r > 0 ? "+" : "") + r.toLocaleString("en") + " €"; }
+  function eur2(v) { return has(v) ? Number(v).toLocaleString("en", { maximumFractionDigits: 2 }) + " €" : "–"; }
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function cls(v) { return !has(v) ? "" : v >= 0 ? "pos" : "neg"; }
+  function done(d) { return d.status === "sold" || d.status === "scrapped"; }
+  function cost(d) { return n(d.buy_price) + n(d.parts_cost) + n(d.stock_parts_cost) + n(d.other_cost); }
+  function profit(d) { return done(d) ? n(d.sell_price) - cost(d) : null; }
+  function perHour(d) { var p = profit(d); return p != null && n(d.hours) > 0 ? p / n(d.hours) : null; }
+
+  function api(method, url, body) {
+    return fetch(url, { method: method, headers: { "Content-Type": "application/json" }, credentials: "same-origin",
+      body: body === undefined ? undefined : JSON.stringify(body) })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); })
+      .then(function (j) { if (j.deals) { S = j; render(); } return j; });
+  }
+
+  // ---------------------------------------------------------------- Tabs
+  function setTab(t) {
+    tab = t; ["overview", "deals", "stock"].forEach(function (x) { $(x).hidden = x !== t; });
+    document.querySelectorAll(".tabs button").forEach(function (b) { b.classList.toggle("on", b.dataset.tab === t); });
+    if (location.hash.slice(1) !== t) history.replaceState(null, "", "#" + t);
+  }
+  document.querySelectorAll(".tabs button").forEach(function (b) { b.onclick = function () { setTab(b.dataset.tab); }; });
+
+  // ---------------------------------------------------------------- render
+  function render() {
+    var open = S.deals.filter(function (d) { return !done(d); }), closed = S.deals.filter(done);
+    var inStock = S.parts.filter(function (p) { return p.qty > 0; });
+    $("nOpen").textContent = open.length ? " " + open.length : "";
+    $("nStock").textContent = inStock.length ? " " + inStock.reduce(function (s, p) { return s + p.qty; }, 0) : "";
+    renderOverview(open, closed); renderDeals(); renderParts(); renderBuys();
+    var cats = {}; S.deals.forEach(function (d) { if (d.category) cats[d.category] = 1; });
+    ["Controller", "Console", "Handheld", "Laptop", "Mini PC", "Phone", "Audio"].forEach(function (c) { cats[c] = 1; });
+    $("catlist").innerHTML = Object.keys(cats).sort().map(function (c) { return '<option value="' + esc(c) + '">'; }).join("");
+    $("grplist").innerHTML = (S.groups || []).map(function (g) { return '<option value="' + esc(g) + '">'; }).join("");
+  }
+
+  function renderOverview(open, closed) {
+    var gain = closed.reduce(function (s, d) { return s + profit(d); }, 0);
+    var hrs = closed.reduce(function (s, d) { return s + n(d.hours); }, 0);
+    var stockVal = S.parts.reduce(function (s, p) { return s + p.qty * n(p.unit_cost); }, 0);
+    var scrap = closed.filter(function (d) { return d.status === "scrapped"; }).length;
+    $("tiles").innerHTML = [
+      [closed.length ? '<span class="' + cls(gain) + '">' + eur(gain, 1) + "</span>" : "–", "total profit"],
+      [hrs > 0 ? eur(gain / hrs) + "/h" : "–", "Ø hourly rate"],
+      [closed.length + (scrap ? ' <span class="sub">(' + scrap + " scrapped)</span>" : ""), "closed"],
+      [eur(open.reduce(function (s, d) { return s + cost(d); }, 0)), "tied up in " + open.length + " open deals"],
+      [eur(stockVal), "stock value"]
+    ].map(function (t) { return '<div class="tile"><div class="v">' + t[0] + '</div><div class="l">' + t[1] + "</div></div>"; }).join("");
+
+    var cats = {};
+    closed.forEach(function (d) {
+      var c = d.category || "no category", k = cats[c] = cats[c] || { n: 0, g: 0, h: 0, x: 0 };
+      k.n++; k.g += profit(d); k.h += n(d.hours); if (d.status === "scrapped") k.x++;
+    });
+    $("cats").innerHTML = Object.keys(cats).sort(function (a, b) {
+      var A = cats[a], B = cats[b]; return (B.h ? B.g / B.h : -1e9) - (A.h ? A.g / A.h : -1e9);
+    }).map(function (c) {
+      var k = cats[c], ph = k.h ? k.g / k.h : null;
+      return "<tr><td>" + esc(c) + '</td><td class="num">' + k.n + '</td><td class="num ' + cls(k.g) + '">' + eur(k.g, 1) +
+        '</td><td class="num opt">' + eur(k.g / k.n, 1) + '</td><td class="num ' + cls(ph) + '">' + (ph == null ? "–" : eur(ph)) +
+        '</td><td class="num opt">' + (k.x ? k.x + " / " + k.n : "–") + "</td></tr>";
+    }).join("") || '<tr><td colspan="6" class="empty">Nothing closed yet.</td></tr>';
+
+    var cal = closed.filter(function (d) { return has(d.est_profit); });
+    var diffs = cal.map(function (d) { return profit(d) - n(d.est_profit); });
+    $("calSum").textContent = cal.length >= 3 ? "Ø deviation " + eur(diffs.reduce(function (a, b) { return a + b; }, 0) / cal.length, 1) +
+      " per deal" : cal.length ? "meaningful from about 10 deals" : "";
+    $("cal").innerHTML = cal.map(function (d, i) {
+      return "<tr><td>" + esc(d.item) + '</td><td class="num">' + eur(d.est_profit, 1) + '</td><td class="num ' + cls(profit(d)) + '">' +
+        eur(profit(d), 1) + '</td><td class="num ' + cls(diffs[i]) + '">' + eur(diffs[i], 1) + '</td><td class="num opt">' +
+        (has(d.est_hours) ? d.est_hours : "–") + " / " + (has(d.hours) ? d.hours : "–") + "</td></tr>";
+    }).join("") || '<tr><td colspan="5" class="empty">Deals created via "bought → deal list" show up here after the sale.</td></tr>';
+  }
+
+  function renderDeals() {
+    document.querySelectorAll("#dfilter .chip").forEach(function (c) { c.classList.toggle("on", c.dataset.f === dFilter); });
+    var list = S.deals.filter(function (d) { return !dFilter || (dFilter === "open" ? !done(d) : d.status === dFilter); });
+    $("dlist").innerHTML = list.map(function (d) {
+      var p = profit(d), ph = perHour(d), c = cost(d);
+      var right = done(d)
+        ? '<div class="g ' + cls(p) + '">' + eur(p, 1) + '</div><div class="h">' + (ph == null ? "" : eur(ph) + "/h") + "</div>"
+        : '<div class="g">' + eur(c) + '</div><div class="h">invested' + (has(d.est_profit) ? " · target " + eur(d.est_profit, 1) : "") + "</div>";
+      var parts = (d.parts || []).map(function (x) { return '<span class="tag">' + esc(x.name) + (x.qty > 1 ? " ×" + x.qty : "") + "</span>"; }).join("");
+      return '<div class="deal" data-id="' + d.id + '"><div class="t">' + esc(d.item) + '</div><div class="r">' + right + "</div>" +
+        '<div class="m"><span class="pill s-' + esc(d.status.replace(" ", "-")) + '">' + esc(d.status) + "</span>" +
+        (d.category ? "<span>" + esc(d.category) + "</span>" : "") + "<span>" + esc(d.bought_date || "") + "</span>" + parts + "</div>" +
+        (!done(d) && d.price_hint && d.price_hint.list ? '<div class="hint">List at ' + d.price_hint.list + " €, not below " + d.price_hint.floor + " €</div>" : "") +
+        "</div>";
+    }).join("") || '<div class="empty">' + (dFilter === "open" ? "No open deals." : "No deals.") + "</div>";
+  }
+
+  function renderParts() {
+    document.querySelectorAll("#pfilter .chip").forEach(function (c) { c.classList.toggle("on", c.dataset.f === pFilter); });
+    var q = $("psearch").value.trim().toLowerCase();
+    var list = S.parts.filter(function (p) {
+      return (!pFilter || p.qty > 0) && (!q || (p.name + " " + (p.device || "") + " " + (p.spec || "")).toLowerCase().indexOf(q) >= 0);
+    }).sort(function (a, b) { return (b.qty > 0) - (a.qty > 0) || (a.device || "").localeCompare(b.device || "") || a.name.localeCompare(b.name); });
+    $("plist").innerHTML = list.map(function (p) {
+      return '<tr><td><div class="pname">' + esc(p.name) + '</div><div class="pspec">' + esc(p.spec || "") +
+        (p.notes ? (p.spec ? " · " : "") + esc(p.notes) : "") + '</div></td><td class="opt">' + esc(p.device || "") +
+        '</td><td class="num">' + eur2(p.unit_cost) + (p.estimated ? '<br><span class="pill est">estimate</span>' : "") +
+        '</td><td class="num opt">' + (has(p.install_min) ? p.install_min + " min" : "–") +
+        '</td><td class="num"><span class="stockn' + (p.qty ? "" : " zero") + '">' + p.qty + '</span></td><td class="num">' +
+        '<button type="button" class="ghost" data-buy="' + p.id + '">+ purchase</button><button type="button" class="ghost" data-edit="' + p.id + '">edit</button></td></tr>';
+    }).join("") || '<tr><td colspan="6" class="empty">' + (pFilter ? "Nothing in stock. \"whole catalogue\" shows all parts." : "No matches.") + "</td></tr>";
+    var val = S.parts.reduce(function (s, p) { return s + p.qty * n(p.unit_cost); }, 0);
+    var cnt = S.parts.reduce(function (s, p) { return s + p.qty; }, 0);
+    $("pfoot").textContent = cnt + " parts in stock, worth about " + eur2(Math.round(val * 100) / 100) + " · " + S.parts.length + " parts in the catalogue";
+  }
+
+  function renderBuys() {
+    $("buys").innerHTML = (S.purchases || []).map(function (b) {
+      var src = b.source ? (/^https?:\/\//.test(b.source) ? '<a href="' + esc(b.source) + '" target="_blank" rel="noreferrer">Link ↗</a>' : esc(b.source)) : "";
+      var dt = b.date ? b.date.slice(8, 10) + "." + b.date.slice(5, 7) + "." + b.date.slice(2, 4) : "";
+      return '<tr><td class="tnum" style="white-space:nowrap">' + esc(dt) + "</td><td>" + esc(b.name) + '</td><td class="num">' + b.qty + '</td><td class="num">' +
+        eur2(b.total_cost) + '</td><td class="num opt">' + eur2(Math.round(b.total_cost / b.qty * 100) / 100) + '</td><td class="opt">' + src +
+        '</td><td class="num"><button type="button" class="ghost danger" data-unbuy="' + b.id + '" title="Delete purchase" aria-label="Delete purchase">✕</button></td></tr>';
+    }).join("") || '<tr><td colspan="7" class="empty">No purchases booked yet.</td></tr>';
+  }
+
+  // ---------------------------------------------------------------- purchase dialog
+  var bForm = $("bForm");
+  function openBuy(pid) {
+    bForm.reset(); $("bErr").textContent = "";
+    var parts = S.parts.slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
+    $("bPart").innerHTML = '<option value="new">+ new part …</option>' + parts.map(function (p) {
+      return '<option value="' + p.id + '">' + esc(p.name) + (p.device ? " (" + esc(p.device) + ")" : "") + "</option>";
+    }).join("");
+    $("bPart").value = pid ? String(pid) : (parts.length ? String(parts[0].id) : "new");
+    bForm.elements.date.value = new Date().toISOString().slice(0, 10);
+    bChange(); $("bDlg").showModal();
+  }
+  function bChange() {
+    var isNew = $("bPart").value === "new";
+    $("bNew").hidden = !isNew; bForm.elements.np_name.required = isNew;
+    var q = parseInt(bForm.elements.qty.value, 10) || 0, tot = n(bForm.elements.total_cost.value), p = isNew ? null : partById(+$("bPart").value);
+    var unit = q > 0 ? tot / q : null, avg = unit;
+    if (p && p.qty > 0 && has(p.unit_cost) && !p.estimated && q > 0) avg = (p.qty * p.unit_cost + tot) / (p.qty + q);
+    $("bCalc").innerHTML = "<div>per unit<b>" + (unit == null || !has(bForm.elements.total_cost.value) ? "–" : eur2(Math.round(unit * 100) / 100)) + "</b></div>" +
+      "<div>stock afterwards<b>" + ((p ? p.qty : 0) + q) + "</b></div>" +
+      (p && p.qty > 0 && avg != null && has(bForm.elements.total_cost.value) ? "<div>new Ø price<b>" + eur2(Math.round(avg * 100) / 100) + "</b></div>" : "");
+  }
+  bForm.addEventListener("input", bChange); $("bPart").addEventListener("change", bChange);
+  bForm.addEventListener("submit", function (e) {
+    e.preventDefault(); $("bErr").textContent = "";
+    var f = bForm.elements, body = { part_id: $("bPart").value, qty: f.qty.value, total_cost: f.total_cost.value, date: f.date.value, source: f.source.value };
+    if (body.part_id === "new") body.new_part = { name: f.np_name.value, device: f.np_device.value, spec: f.np_spec.value, install_min: f.np_install_min.value };
+    api("POST", "api/purchases", body).then(function () { $("bDlg").close(); pFilter = "stock"; renderParts(); })
+      .catch(function (err) { $("bErr").textContent = err.message; });
+  });
+  $("newBuy").onclick = function () { openBuy(null); };
+  $("buys").onclick = function (e) {
+    var id = e.target.dataset.unbuy;
+    if (id && confirm("Delete purchase? Stock and unit cost are recalculated."))
+      api("DELETE", "api/purchases/" + id, {}).catch(function (err) { $("gerr").textContent = err.message; });
+  };
+
+  // ---------------------------------------------------------------- deal dialog
+  var dForm = $("dForm");
+  function partById(id) { return S.parts.filter(function (p) { return p.id === id; })[0]; }
+  function available(p) {  // stock + what this deal already uses
+    var mine = editDeal ? ((editDeal.parts || []).filter(function (x) { return x.part_id === p.id; })[0] || {}).qty || 0 : 0;
+    return p.qty + mine;
+  }
+  function renderUsed() {
+    $("usedParts").innerHTML = used.map(function (u, i) {
+      var p = partById(u.part_id) || {};
+      return "<span>" + esc(p.name || u.name) + " ×" + u.qty + ' <button type="button" data-rm="' + i + '" aria-label="remove">×</button></span>';
+    }).join("") || '<span class="sub" style="background:none;padding:0">none</span>';
+    var opts = S.parts.filter(function (p) {
+      var u = used.filter(function (x) { return x.part_id === p.id; })[0];
+      return available(p) - (u ? u.qty : 0) > 0;
+    });
+    $("partSel").innerHTML = opts.map(function (p) {
+      var u = used.filter(function (x) { return x.part_id === p.id; })[0];
+      return '<option value="' + p.id + '">' + esc(p.name) + " (" + (available(p) - (u ? u.qty : 0)) + " available, " + eur2(p.unit_cost) + " each)</option>";
+    }).join("") || "<option value=''>nothing in stock</option>";
+    $("partAdd").disabled = !opts.length;
+    calc();
+  }
+  function usedCost() { return used.reduce(function (s, u) { var p = partById(u.part_id) || {}; return s + u.qty * n(u.unit_cost != null ? u.unit_cost : p.unit_cost); }, 0); }
+  function hintBox(c) {
+    var h = editDeal && editDeal.price_hint, box = $("hintBox"), q = encodeURIComponent(dForm.querySelector("[name=item]").value || "");
+    var ebay = q ? ' · <a href="https://www.ebay.de/sch/i.html?_nkw=' + q + '&LH_Sold=1&LH_Complete=1" target="_blank" rel="noreferrer">eBay sold ↗</a>' : "";
+    if (!h) { box.hidden = !q; box.innerHTML = "Price hint after saving" + ebay; return; }
+    box.hidden = false;
+    if (!h.list) { box.innerHTML = esc(h.text) + ebay; return; }
+    box.innerHTML = "Suggestion: list at <b>" + h.list + " €</b>, not below <b>" + h.floor + " €</b> → profit " +
+      eur(h.floor - c, 1) + " to " + eur(h.list - c, 1) + '<div class="sub">' + esc(h.text.replace(/^[^(]*\(/, "(")) + ebay + "</div>";
+  }
+  function calc() {
+    var f = dForm.elements, lager = usedCost();
+    var c = n(f.buy_price.value) + n(f.parts_cost.value) + n(f.other_cost.value) + lager;
+    var sell = f.sell_price.value, g = has(sell) ? n(sell) - c : null, h = n(f.hours.value);
+    $("calc").innerHTML = "<div>invested<b>" + eur2(Math.round(c * 100) / 100) + "</b></div><div>of which stock parts<b>" + eur2(Math.round(lager * 100) / 100) +
+      "</b></div><div>profit<b class='" + cls(g) + "'>" + (g == null ? "–" : eur(g, 1)) + "</b></div><div>€/h<b class='" + cls(g) + "'>" +
+      (g != null && h > 0 ? eur(g / h) : "–") + "</b></div>";
+    hintBox(c);
+  }
+  function openDeal(d, prefill) {
+    editDeal = d || null; dForm.reset(); $("dErr").textContent = "";
+    var src = d || prefill || {};
+    Array.prototype.forEach.call(dForm.elements, function (el) { if (el.name && has(src[el.name])) el.value = src[el.name]; });
+    if (!d && !has(src.bought_date)) dForm.elements.bought_date.value = new Date().toISOString().slice(0, 10);
+    used = d ? (d.parts || []).map(function (x) { return { part_id: x.part_id, qty: x.qty, unit_cost: x.unit_cost, name: x.name }; }) : [];
+    $("dTitle").textContent = d ? "Edit deal" : "New deal"; $("dDel").hidden = !d;
+    var e = src.est_profit, h = src.est_hours;
+    $("botEst").textContent = has(e) ? "Estimate: " + eur(n(e), 1) + " profit" + (has(h) ? " in " + h + " h" : "") : "";
+    renderUsed(); $("dDlg").showModal();
+  }
+  $("partAdd").onclick = function () {
+    var id = parseInt($("partSel").value, 10), q = Math.max(1, parseInt($("partQty").value, 10) || 1), p = partById(id);
+    if (!p) return;
+    var u = used.filter(function (x) { return x.part_id === id; })[0], have = u ? u.qty : 0;
+    q = Math.min(q, available(p) - have);
+    if (q <= 0) return;
+    if (u) u.qty += q; else used.push({ part_id: id, qty: q, unit_cost: p.unit_cost, name: p.name });
+    $("partQty").value = 1; renderUsed();
+  };
+  $("usedParts").onclick = function (e) { var i = e.target.dataset.rm; if (i != null) { used.splice(+i, 1); renderUsed(); } };
+  dForm.addEventListener("input", calc);
+  dForm.addEventListener("submit", function (e) {
+    e.preventDefault(); $("dErr").textContent = "";
+    var body = { parts: used.map(function (u) { return { part_id: u.part_id, qty: u.qty }; }) };
+    Array.prototype.forEach.call(dForm.elements, function (el) { if (el.name) body[el.name] = el.value; });
+    (editDeal ? api("PUT", "api/deals/" + editDeal.id, body) : api("POST", "api/deals", body))
+      .then(function () { $("dDlg").close(); }).catch(function (err) { $("dErr").textContent = err.message; });
+  });
+  $("dDel").onclick = function () {
+    if (editDeal && confirm("Delete deal? Parts used from stock go back into stock."))
+      api("DELETE", "api/deals/" + editDeal.id, {}).then(function () { $("dDlg").close(); }).catch(function (err) { $("dErr").textContent = err.message; });
+  };
+  $("newDeal").onclick = function () { openDeal(null); };
+  $("dlist").onclick = function (e) {
+    var el = e.target.closest(".deal"); if (!el) return;
+    openDeal(S.deals.filter(function (d) { return d.id === el.dataset.id; })[0]);
+  };
+  $("dfilter").onclick = function (e) { if (e.target.dataset.f != null) { dFilter = e.target.dataset.f; renderDeals(); } };
+
+  // ---------------------------------------------------------------- part dialog
+  var pForm = $("pForm");
+  function openPart(p) {
+    editPart = p || null; pForm.reset(); $("pErr").textContent = "";
+    if (p) Array.prototype.forEach.call(pForm.elements, function (el) {
+      if (!el.name) return; if (el.type === "checkbox") el.checked = !!p[el.name]; else el.value = has(p[el.name]) ? p[el.name] : "";
+    });
+    $("pTitle").textContent = p ? "Edit part" : "New part"; $("pDel").hidden = !p; $("pDlg").showModal();
+  }
+  pForm.elements.unit_cost.addEventListener("input", function () { pForm.elements.estimated.checked = false; });
+  pForm.addEventListener("submit", function (e) {
+    e.preventDefault(); $("pErr").textContent = "";
+    var body = {}; Array.prototype.forEach.call(pForm.elements, function (el) { if (el.name) body[el.name] = el.type === "checkbox" ? (el.checked ? 1 : 0) : el.value; });
+    (editPart ? api("PUT", "api/parts/" + editPart.id, body) : api("POST", "api/parts", body))
+      .then(function () { $("pDlg").close(); }).catch(function (err) { $("pErr").textContent = err.message; });
+  });
+  $("pDel").onclick = function () {
+    if (editPart && confirm("Delete part from the catalogue?"))
+      api("DELETE", "api/parts/" + editPart.id, {}).then(function () { $("pDlg").close(); }).catch(function (err) { $("pErr").textContent = err.message; });
+  };
+  $("newPart").onclick = function () { openPart(null); };
+  $("plist").onclick = function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.buy) openBuy(+b.dataset.buy);
+    if (b.dataset.edit) openPart(partById(+b.dataset.edit));
+  };
+  $("pfilter").onclick = function (e) { if (e.target.dataset.f != null) { pFilter = e.target.dataset.f; renderParts(); } };
+  $("psearch").oninput = renderParts;
+  document.querySelectorAll("[data-close]").forEach(function (b) { b.onclick = function () { b.closest("dialog").close(); }; });
+
+  // ---------------------------------------------------------------- Start
+  setTab(["overview", "deals", "stock"].indexOf(location.hash.slice(1)) >= 0 ? location.hash.slice(1) : "deals");
+  api("GET", "api/all").then(function () {
+    // prefill from a search page: ?item=…&price=…&link=…&cat=…&other=…&lid=…&profit=…&hours=…&grp=…
+    var q = new URLSearchParams(location.search);
+    if (q.get("item")) {
+      setTab("deals");
+      openDeal(null, { item: q.get("item"), buy_price: q.get("price"), link: q.get("link"), category: q.get("cat"),
+        other_cost: q.get("other"), listing_id: q.get("lid"), est_profit: q.get("profit"), est_hours: q.get("hours"),
+        market_group: q.get("grp") });
+      history.replaceState(null, "", location.pathname + "#deals");
+    }
+  }).catch(function (e) { $("gerr").textContent = "Loading failed: " + e.message; });
+})();
+</script>
+</body></html>
