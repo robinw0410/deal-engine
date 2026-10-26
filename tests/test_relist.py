@@ -1,8 +1,8 @@
 """Relist detection (core/insights.find_relist)."""
 import pytest
 
-from core import history
-from core.insights import find_relist
+from deal_engine.core import history
+from deal_engine.core.insights import find_relist
 
 
 @pytest.fixture

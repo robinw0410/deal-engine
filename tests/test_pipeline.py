@@ -1,18 +1,21 @@
 """End-to-end: json_file adapter, demo evaluator, two simulated days."""
 import json
+from pathlib import Path
 
 import yaml
 
-from core import config as config_mod
-from core.listing import normalize
-from core.run import run_search
+from deal_engine.core import config as config_mod
+from deal_engine.core.listing import normalize
+from deal_engine.core.run import run_search
 
 import pytest
 
 
 def write_cfg(tmp_path):
-    raw = yaml.safe_load(open(config_mod.ROOT / "config.example.yaml"))
+    raw = yaml.safe_load(open(Path(__file__).resolve().parent.parent / "config.example.yaml"))
     raw["data_dir"] = str(tmp_path)
+    # relative paths are relative to the config file, which lives in tmp_path here
+    raw["searches"]["electronics"]["profile"] = str(Path(__file__).resolve().parent.parent / "profiles" / "electronics.md")
     p = tmp_path / "config.yaml"
     p.write_text(yaml.safe_dump(raw))
     return config_mod.load(p)
@@ -29,7 +32,7 @@ def day(tmp_path, monkeypatch, d, rows):
 
 
 def test_two_days(tmp_path, monkeypatch):
-    from demo.evaluator import evaluate
+    from deal_engine.demo.evaluator import evaluate
     cfg = write_cfg(tmp_path)
     working = [listing(str(i), "Nintendo Switch Lite", 110 + i) for i in range(1, 9)]
     deal = listing("100", "Switch Lite – stick drift", 45)

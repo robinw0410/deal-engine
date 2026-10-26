@@ -1,6 +1,6 @@
 import pytest
 
-from core.score import DEFAULTS, SHIPPING_DEFAULTS, compute, interp, max_price
+from deal_engine.core.score import DEFAULTS, SHIPPING_DEFAULTS, compute, interp, max_price
 
 C = {**DEFAULTS, **SHIPPING_DEFAULTS}
 

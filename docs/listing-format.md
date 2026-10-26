@@ -4,7 +4,7 @@ Every adapter returns listings as JSON objects in this format. The `json_file` a
 file that is either a list of such objects or `{"listings": [...]}`. Check a file with
 
 ```sh
-python -m core validate listings.json
+python -m deal_engine validate listings.json
 ```
 
 ## Example
@@ -52,10 +52,25 @@ python -m core validate listings.json
 | `images` | list of URLs | no | Photos. Up to `images` per search are downloaded for the evaluator (http/https, max 8 MB each). |
 | `attrs` | object | no | Additional attributes (values longer than 300 characters are dropped). |
 | `auction`, `auction_end`, `best_offer` | bool / string / bool | no | Auction information. |
-| `status` | `"active"` or `"reserved"` | no | Default `"active"`. A listing that is no longer returned at all counts as gone (via `check()`). |
+| `status` | `"active"` or `"reserved"` | no | Default `"active"`. A listing that is no longer returned at all is checked with the adapter's `check()`, which returns `(status, price)`. |
 
-Unknown fields are ignored. Do not put personal data of sellers (names, user ids, phone numbers,
-ratings) into this format - deal-engine does not need it and does not store it.
+## Extra fields
+
+Any other field whose name consists of lowercase letters, digits and underscores (e.g. `km`,
+`year`, `ps`, `size`) and whose value is a number, a string (under 300 characters) or a bool is kept
+as a real field: it appears in the evaluation batches, numeric filters can use it
+(`filters.fields: {km: {max: 60000}}`) and it is carried into the state entry. Fields named like something deal-engine uses itself are ignored: state and computed fields (`id`,
+`score`, `tier`, `summary`, `market_*`, `shipping_cost_eur`, …) and the evaluation fields the score
+formula reads (`risk`, `deal_type`, `repair_hours`, `market_price`, …; see `RESERVED` in
+`deal_engine/core/listing.py`). Fields with other names or value types (lists, objects) are ignored too.
+
+```json
+{"source_id": "77", "url": "https://example.invalid/77", "title": "Touring bike", "price": 4200,
+ "km": 38000, "year": 2013, "ps": 120}
+```
+
+Do not put personal data of sellers (names, user ids, phone numbers, ratings) into this format -
+deal-engine does not need it and does not store it.
 
 ## State entries
 

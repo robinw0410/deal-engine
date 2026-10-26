@@ -1,6 +1,6 @@
 import pytest
 
-from core.groups import bundle_qty, market_group, match_group
+from deal_engine.core.groups import bundle_qty, market_group, match_group
 
 CONTROLLER = {"name": "DualSense", "match": "dualsense|ps5 controller", "min": 20, "max": 90}
 CONSOLE = {"name": "PS5", "match": r"\bps5\b", "exclude": "controller|dualsense", "min": 250, "max": 600}
@@ -46,7 +46,7 @@ def test_market_group_excludes_bundles_accessories_and_outliers():
     ("Steam Deck with case and charger", False),
 ])
 def test_accessory_vs_device_with_accessories(title, acc):
-    from core.groups import is_accessory
+    from deal_engine.core.groups import is_accessory
     assert is_accessory(title) is acc
 
 

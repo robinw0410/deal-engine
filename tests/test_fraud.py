@@ -1,6 +1,6 @@
 import pytest
 
-from core.score import DEFAULTS, fraud
+from deal_engine.core.score import DEFAULTS, fraud
 
 
 @pytest.mark.parametrize("issues,expected", [

@@ -1,10 +1,10 @@
 """Unknown shipping costs are never treated as 0."""
 import pytest
 
-from adapters.ebay import to_listing
-from core.listing import normalize, shipping_unknown
-from core.pipeline import select
-from core.score import DEFAULTS, SHIPPING_DEFAULTS, compute
+from deal_engine.adapters.ebay import to_listing
+from deal_engine.core.listing import normalize, shipping_unknown
+from deal_engine.core.pipeline import select
+from deal_engine.core.score import DEFAULTS, SHIPPING_DEFAULTS, compute
 
 C = {**DEFAULTS, **SHIPPING_DEFAULTS}
 GROUP = {"name": "Switch Lite", "match": r"switch\s*lite", "min": 60, "max": 200}

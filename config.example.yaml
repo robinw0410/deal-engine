@@ -66,7 +66,7 @@ searches:
       max_price: 800
       max_age_days: 30
       max_pickup_km: 80                # pickup-only listings further away are skipped
-      # accessories of a market group are skipped automatically (core/groups.py, ACCESSORY)
+      # accessories of a market group are skipped automatically (accessory words of the locale, deal_engine/core/locale.py; override with market.accessory_regex)
       exclude_title_regex: "\\b(wanted|buying|swap|trade)\\b|repair service"
       # defect signal: listings with it are repair candidates, without it flips
       signal_regex: "defect|broken|for parts|faulty|drift|no picture|no hdmi|does not charge|won't turn on|overheat|loud fan|cracked|liquid damage|without (ram|ssd)|battery (service|worn)|not working|shuts down|blue light|flicker|missing"
@@ -93,10 +93,71 @@ searches:
     insights: {min_sold: 8, window_days: 60, sold_factor: 0.93}
 
     score:
-      enabled: true                    # computed score; see core/score.py for all parameters
+      enabled: true                    # computed score; see deal_engine/core/score.py for all parameters
       min_profit: {flip: 15, repair: 10}
       target_score: 6
 
     parts_catalog: false               # add the parts catalogue/stock of the deal list to the evaluation prompt
     prefilter: false                   # cheap model drops obvious junk before the evaluation
     classify: false                    # LLM assigns titles to groups (needs the Claude Code CLI)
+
+    # The static page of this search (python -m deal_engine render). Without "web" a search gets a
+    # generic page (score, price, location). Every label can be plain text or one text per locale
+    # ({en: Profit, de: Gewinn}); a missing label is the field label of the locale.
+    web:
+      slug: electronics                # page lives at <web.root>/<slug>/ (default: search name)
+      tiers: {A: {en: "Worth it (score 7+)", de: "Lohnt sich (Score 7+)"}, B: {en: "Borderline (5–6)", de: "Grenzfall (5–6)"},
+              C: {en: "Rather not (up to 4)", de: "Eher nicht (bis 4)"}}
+      columns:                         # extra columns of the top-5 table; format: eur, int or text
+        - {label: {en: Profit, de: Gewinn}, field: expected_profit_eur, format: eur}
+        - {label: "€/h", field: profit_per_hour_eur, format: int}
+      meta: [device, defect, location] # fields in the line below the card title
+      # built-in badges: deal_type, risk, photo_check, shipping_unknown, auction_end, parts_in_stock;
+      # generic ones: {field: ..., label: "text {value}", class: ok|bad|unk|new, when: value or [values]}
+      badges: [deal_type, risk, photo_check, shipping_unknown, auction_end, parts_in_stock]
+      sorts:                           # first one is the default
+        - {label: Score, field: score, desc: true}
+        - {label: "€/h", field: profit_per_hour_eur, desc: true}
+        - {label: {en: Profit, de: Gewinn}, field: expected_profit_eur, desc: true}
+        - {label: {en: Price, de: Preis}, field: price}
+        - {label: {en: Distance, de: Entfernung}, field: distance_km}
+      facets:                          # for grouping and filter chips; "tier" is always there
+        - key: cat                     # regex categories: first matching rule wins, in this order
+          label: {en: Category, de: Kategorie}
+          from: [title, device, market_group]
+          rules:
+            - [{en: Controllers, de: Controller}, 'controller|dualsense|dualshock|joy[- ]?con|gamepad|\belite\b']
+            - [Handhelds, 'steam\s*deck|rog\s*ally|switch\s*lite|\b[23]ds\b|\bvita\b|game\s*boy']
+            - [{en: Consoles, de: Konsolen}, '\bps[1-5]\b|playstation|xbox|switch|\bwii\b|console']
+            - [Laptops & PCs, 'laptop|notebook|thinkpad|latitude|elitebook|macbook|mini[- ]?pc|optiplex|graphics card|\brtx\b']
+            - [{en: Phones & tablets, de: Handys & Tablets}, 'iphone|ipad|galaxy|pixel|smartphone|tablet']
+            - [{en: Audio & wearables, de: Audio & Wearables}, 'headphones?|airpods|earbuds|watch']
+          other: {en: Other, de: Sonstiges}
+        - {key: kind, label: {en: Kind, de: Art}, field: deal_type, default: repair, capitalize: true}
+      groups: [cat, tier, kind]        # "group by" choices, first one is the default
+      chips: [cat, kind]               # filter chips
+      # orders: {kind: [Repair, Flip]} # fixed value order of a facet (regex facets use their rule order)
+      toggles:                         # filter buttons: equals, max or min
+        - {key: ship, label: {en: shipping possible, de: Versand möglich}, field: shipping_possible, equals: true}
+        - {key: near, label: "≤ 50 km", field: distance_km, max: 50}
+      deal_link: true                  # "bought → deal list" link on every card
+
+  # A second search would get its own page. Sketch for motorbikes whose evaluation profile
+  # returns touring_score and gravel_score (0-10):
+  # motorbikes:
+  #   title: Motorbikes
+  #   profile: profiles/motorbikes.md
+  #   ...
+  #   web:
+  #     columns:
+  #       - {label: Touring, field: touring_score, format: int}
+  #       - {label: Gravel, field: gravel_score, format: int}
+  #       - {field: km, format: int}
+  #     meta: [year, km, location]
+  #     sorts:
+  #       - {label: Score, field: score, desc: true}
+  #       - {label: Touring, field: touring_score, desc: true}
+  #       - {label: Gravel, field: gravel_score, desc: true}
+  #       - {label: Price, field: price}
+  #     toggles:
+  #       - {key: a2, label: A2 license, field: ps, max: 48}

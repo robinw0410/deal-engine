@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "deal-engine"
-version = "0.1.1"
+version = "0.2.0"
 description = "Self-hosted engine for finding second-hand deals: listing state, market prices, tracking, LLM evaluation and scoring"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -15,11 +15,11 @@ dependencies = ["PyYAML>=6.0"]
 test = ["pytest>=7"]
 
 [tool.setuptools]
-packages = ["core", "adapters", "deals", "web", "demo"]
+packages = ["deal_engine", "deal_engine.core", "deal_engine.adapters", "deal_engine.deals", "deal_engine.web", "deal_engine.demo"]
 
 [tool.setuptools.package-data]
-core = ["prompts/*.md"]
-deals = ["deals.html"]
+"deal_engine.core" = ["prompts/*/*.md"]
+"deal_engine.deals" = ["deals.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

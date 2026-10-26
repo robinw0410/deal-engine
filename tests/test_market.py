@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from core.market import estimate, resale_from_ask, sold_estimate
+from deal_engine.core.market import estimate, resale_from_ask, sold_estimate
 
 G = {"name": "Switch Lite", "match": r"switch\s*lite", "min": 60, "max": 200}
 GROUPS = [G]
