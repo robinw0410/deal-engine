@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.2.3 – 2026-10-27
+
+### Fixed
+
+- **Model numbers read as bundle quantities.** "PlayStation 5 Controller" counted as five
+  controllers, "PlayStation 4 Controller" as four and "Xbox Elite 2 Controller" as two, so the
+  listing was kept out of the controller group's statistics and compared with the wrong price.
+  Locales `en`/`de`: `not_qty` += playstation, elite.
+- `bundle_qty()`: after a skipped model number the search continues right behind it, so a quantity
+  that follows directly is found ("PlayStation 4 2 Controller" = 2, before: 1).
+- Locales `en`/`de`: "x2"/"×3" after the noun is a quantity ("Controller x2", "DualSense ×3").
+- **Title filters now also apply to the stored listings.** `reconcile()` checked only `max_price` and
+  field filters, so a listing that entered the state under an older, looser
+  `include_title_regex`/`exclude_title_regex` stayed there for good. It is now removed like a
+  `max_price` violation (reported as no longer matching the criteria), except when it has no stored
+  title or another source. If more than max(5, 30 %) of an adapter's listings would go at once, nothing
+  is removed and the run reports a problem (`prob.title_rule`): a too broad regex cannot wipe the
+  state.
+- **Evaluator tier restored when a score hook cap goes away.** Without formula numbers only the
+  evaluator's score was kept (`score_ai`), not its tier: a listing capped by a hook kept the capped
+  tier after the cap no longer applied. `tier_ai` is now stored on the first run as well.
+
+### Added
+
+- `filters.title_failed(title, filters)`: "exclude", "include" or None; used by `passes()` and
+  `reconcile()`.
+
 ## 0.2.2 – 2026-10-27
 
 ### Fixed

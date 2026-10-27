@@ -62,9 +62,14 @@ def bundle_qty(title, group=None, loc=None):
         return 1
     t = str(title or "")
     for rx in L.qty_rx:
-        for m in rx.finditer(t):
+        pos = 0
+        while (m := rx.search(t, pos)):
+            pos = m.end()
             if L.not_qty.search(t[:m.start()]):
-                continue   # "Elite Series 2", "PS4", "V2"
+                # "Elite Series 2", "PS4", "V2"; search on right after the model number, which may be
+                # followed by the quantity ("PlayStation 4 2 Controller")
+                pos = m.end(1)
+                continue
             v = m.group(1).lower()
             n = L.number_words.get(v) or (int(v) if v.isdigit() else 1)
             if 2 <= n <= 20:

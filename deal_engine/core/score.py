@@ -330,6 +330,10 @@ def apply(cfg, sc, state_path, show=False, log=print):
             l["score_ai"] = l.get("score")
         r = compute(l, c)
         if r is None:
+            # keep the evaluator's tier once, like score_ai: when a hook cap no longer applies on a
+            # later run (e.g. a field was added), the evaluator's tier comes back, not the capped one
+            if "tier_ai" not in l and l.get("tier"):
+                l["tier_ai"] = l["tier"]
             l["score"] = l.get("score_ai")
             if l.get("tier_ai"):
                 l["tier"] = l["tier_ai"]

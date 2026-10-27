@@ -38,16 +38,26 @@ def fields_failed(it, flt):
     return None
 
 
+def title_failed(title, flt):
+    """"exclude" or "include" if the title fails that title regex of the filters, otherwise None.
+    Both are searched case-insensitively anywhere in the full title (re.search): a pattern without
+    word boundaries also hits inside words ("such" in "Suchmaschine")."""
+    title = title or ""
+    flt = flt or {}
+    if flt.get("exclude_title_regex") and re.search(flt["exclude_title_regex"], title, re.I):
+        return "exclude"
+    if flt.get("include_title_regex") and not re.search(flt["include_title_regex"], title, re.I):
+        return "include"
+    return None
+
+
 def passes(it, flt):
     """True if the listing passes all hard filters. Missing values never fail a filter
     (except numeric field filters with missing: fail)."""
-    title = it.get("title") or ""
     if flt.get("max_age_days") and it.get("_published"):
         if it["_published"] < str(clock.today() - timedelta(days=int(flt["max_age_days"]))):
             return False
-    if flt.get("exclude_title_regex") and re.search(flt["exclude_title_regex"], title, re.I):
-        return False
-    if flt.get("include_title_regex") and not re.search(flt["include_title_regex"], title, re.I):
+    if title_failed(it.get("title"), flt):
         return False
     p = it.get("price")
     if p is not None:

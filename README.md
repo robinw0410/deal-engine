@@ -53,7 +53,7 @@ there `deal_engine` is importable without installing it.
 **As a package**, from a release tag:
 
 ```sh
-pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.2"
+pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.3"
 ```
 
 This installs the `deal_engine` package including the built-in prompts and the deal list page.
@@ -367,7 +367,11 @@ before connecting anything real.
 Any listing field whose name is lowercase letters, digits and underscores (`km`, `year`, `ps`, …)
 and whose value is a number, a short string or a bool is kept as a real field: it goes into the
 evaluation batches and the state, and numeric filters can use it (also on `attrs`). Stored
-listings that no longer pass leave the state as "no longer matches the criteria".
+listings that no longer pass leave the state as "no longer matches the criteria". The same holds
+for `include_title_regex` / `exclude_title_regex` (since 0.2.3): a stored listing whose title no
+longer passes is removed too, unless it has no stored title or another source. Removals by title
+are guarded like mass disappearances: if more than max(5, 30 %) of an adapter's listings would go,
+nothing is removed and the report names it as a problem (regex too broad?).
 Details in the [listing format](docs/listing-format.md#extra-fields).
 
 ```yaml

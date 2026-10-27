@@ -23,7 +23,7 @@ EN = {
                      "ten": 10, "pair": 2},
     "qty_units": r"x|×|pcs\.?|pieces?|units?",
     "qty_nouns": r"controllers?|gamepads?|dualsense|dualshock|pads",
-    "not_qty": r"(series|gen\.?|generation|version|model|mk|v|ps|edition|rev\.?|switch)\s*$",
+    "not_qty": r"(series|gen\.?|generation|version|model|mk|v|ps|edition|rev\.?|switch|playstation|elite)\s*$",
     "with_words": r"\bwith\b|\bwithout\b|\bincl\b\.?|\bincluding\b|\+|&|\band\b",
     "accessory": (r"\bcase\b|\bcover\b|skin|sleeve|\bstand\b|holder|mount|charging\s*(station|dock|stand|kit|cable|kabel)|charger|"
                   r"\bcable\b|\busb\b|empty box|\bbox only\b|packaging|dummy|power ?bank|battery pack|"
@@ -54,6 +54,8 @@ EN = {
         "prob.invalid": "{adapter}: {n} invalid listings ignored (see docs/listing-format.md)",
         "prob.offline": ("{n} of {total} {adapter} listings look offline. That is implausibly many "
                          "(outage or changed source?), so nothing was removed."),
+        "prob.title_rule": ("{n} of {total} {adapter} listings no longer match the title filters. That is "
+                            "implausibly many (title regex too broad?), so nothing was removed."),
         "prob.blocked": "{adapter} blocked: {error}. Run aborted, state not fully checked.",
         "prob.eval": "evaluation of batch {n} failed ({count} candidates, retried next run)",
         "ship.unknown": "shipping unknown, assumed {cost} €",
@@ -147,7 +149,7 @@ DE = {
                      "neun": 9, "zehn": 10, **EN["number_words"]},
     "qty_units": r"x|×|stk\.?|stück|stueck|pcs\.?|pieces?",
     "qty_nouns": r"controllers?|gamepads?|dualsense|dualshock|pads",
-    "not_qty": r"(series|serie|gen\.?|generation|version|modell|model|mk|v|ps|edition|rev\.?|switch)\s*$",
+    "not_qty": r"(series|serie|gen\.?|generation|version|modell|model|mk|v|ps|edition|rev\.?|switch|playstation|elite)\s*$",
     "with_words": (r"\bmit\b|\bohne\b|\binkl\b\.?|\binklusive\b|\bsamt\b|\bplus\b|\bund\b|\bwith\b|\bwithout\b|\bincl\b\.?|"
                    r"\bincluding\b|\+|&"),
     "accessory": (r"hülle|huelle|\bcase\b|skin|ständer|staender|halterung|ladestation|ladekabel|\bkabel\b|karton|"
@@ -177,6 +179,8 @@ DE = {
         "prob.invalid": "{adapter}: {n} ungültige Inserate ignoriert (siehe docs/listing-format.md)",
         "prob.offline": ("{n} von {total} {adapter}-Inseraten wirken offline. Das ist unplausibel viel "
                          "(Störung oder geänderte Quelle?), daher nichts entfernt."),
+        "prob.title_rule": ("{n} von {total} {adapter}-Inseraten passen nicht mehr zu den Titel-Filtern. Das "
+                            "ist unplausibel viel (Titel-Regex zu breit?), daher nichts entfernt."),
         "prob.blocked": "{adapter} blockiert: {error}. Lauf abgebrochen, Bestand nicht vollständig geprüft.",
         "prob.eval": "Bewertung von Batch {n} fehlgeschlagen ({count} Kandidaten, nächstes Mal erneut)",
         "ship.unknown": "Versand unbekannt, {cost} € angenommen",
@@ -280,6 +284,8 @@ class Locale:
                        + d["qty_nouns"] + r")\b", re.I),
             # "DualSense 2x", "Controller 3 Stück"
             re.compile(r"(?<![\w.,])" + num + r"\s*(?:" + d["qty_units"] + r")(?!\w)", re.I),
+            # "Controller x2", "DualSense ×3"
+            re.compile(r"(?<![\w.,])[x×]\s*" + num + r"(?!\w)", re.I),
         ]
         self.not_qty = re.compile(d["not_qty"], re.I)
         # "Switch Lite with charger", "PS5 inkl. Kabel + Hülle": accessories that come WITH a device

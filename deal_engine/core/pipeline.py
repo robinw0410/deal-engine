@@ -22,7 +22,7 @@ from . import classify, clock, history
 from . import config as config_mod
 from . import locale as locale_mod
 from .config import ConfigError
-from .filters import fields_failed, has_signal, passes
+from .filters import fields_failed, has_signal, passes, title_failed
 from .groups import bundle_qty, from_classification, is_accessory, is_bundle_group, match_group
 from .listing import EXTRA_NAME, RESERVED, normalize, shipping_unknown
 from .market import due as market_due, refresh as market_refresh, resale_from_ask, settings as market_settings
@@ -135,7 +135,7 @@ def reconcile(state, items, adapter, sc, changes, log=print, loc=None):
     loc = loc or locale_mod.get(sc.get("_locale"))
     flt = sc.get("filters") or {}
     today = clock.today_str()
-    keep = []
+    keep, title_rule = [], []
     for l in state.get("listings", []):
         sources = l.get("sources") or {}
         sid = sources.get(adapter.name)
@@ -147,6 +147,11 @@ def reconcile(state, items, adapter, sc, changes, log=print, loc=None):
         too_expensive = flt.get("max_price") is not None and p is not None and p > flt["max_price"]
         if (too_expensive or fields_failed(l, flt)) and len(sources) == 1:
             changes["rule"].append(l)
+            continue
+        # title regexes: a listing that got into the state under an older, looser regex must not stay
+        # there; without a stored title there is nothing to judge, so it stays (mass guard below)
+        if l.get("title") and len(sources) == 1 and title_failed(l["title"], flt):
+            title_rule.append(l)
             continue
         it = items.get(sid)
         newp = None
@@ -197,6 +202,13 @@ def reconcile(state, items, adapter, sc, changes, log=print, loc=None):
             l["last_check_failed"] = today
         keep += changes["gone"]
         changes["gone"] = []
+    # same guard for the title regexes: one too broad exclude (or too narrow include) must not wipe
+    # the adapter's whole stock in one run
+    if len(title_rule) > max(5, 0.3 * n_total):
+        changes["problems"].append(loc.t("prob.title_rule", n=len(title_rule), total=n_total, adapter=adapter.name))
+        keep += title_rule
+    else:
+        changes["rule"] += title_rule
     state["listings"] = keep
 
 
