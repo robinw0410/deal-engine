@@ -93,6 +93,11 @@ def search(cfg, name):
     sc = {**SEARCH_DEFAULTS, **raw}
     sc["_name"] = name
     sc["_locale"] = _locale(raw.get("locale") or cfg.get("locale"), f"searches.{name}.locale")
+    from .groups import check_groups
+    try:
+        check_groups((sc.get("market") or {}).get("groups"), f"searches.{name}.market.groups")
+    except ValueError as e:
+        raise ConfigError(str(e))
     if sc["wanted_ads"] not in ("reject", "accept"):
         raise ConfigError(f"search '{name}': wanted_ads must be 'reject' or 'accept', not {sc['wanted_ads']!r}")
     return sc

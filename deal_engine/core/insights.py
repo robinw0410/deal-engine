@@ -13,7 +13,7 @@ from datetime import date, timedelta
 
 from . import clock, history
 from . import locale as locale_mod
-from .groups import bundle_qty, is_accessory, match_group
+from .groups import bundle_qty, from_classification, is_accessory, match_group
 from .market import resale_from_ask, settings as market_settings, sold_estimate
 from .score import negotiation_head, opening_discount
 from .util import load_json, median, save_json
@@ -71,8 +71,7 @@ def find_relist(con, search, key, relist_days=45, loc=None):
 
 def classified(con, key, title):
     """Stored LLM classification (grp, qty, kind) if present and the title is unchanged."""
-    r = con.execute("SELECT title, grp, qty, kind FROM classify WHERE uid=?", (key,)).fetchone()
-    return (r[1], r[2] or 1, r[3]) if r and r[0] == title else None
+    return history.classification(con, key, title)
 
 
 def apply(cfg, sc, paths, log=print):
@@ -122,10 +121,9 @@ def apply(cfg, sc, paths, log=print):
             if grp and is_accessory(l.get("title"), mc.get("accessory_regex"), loc):
                 grp = None
             qty = bundle_qty(l.get("title"), grp, loc) if grp else 1
-            cls = classified(con, key, l.get("title"))
-            if cls:   # the LLM classification wins over the word rules
-                cg, cq, ck = cls
-                grp = next((g for g in groups if g["name"] == cg), None) if ck in ("device", "bundle") else None
+            cls = from_classification(l.get("title"), classified(con, key, l.get("title")), groups)
+            if cls:   # a plausible LLM classification wins over the word rules
+                _, grp, cq = cls
                 qty = cq if grp else 1
             m = market.get(grp["name"]) if grp else None
             if m:

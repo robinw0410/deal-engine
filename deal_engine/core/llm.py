@@ -6,7 +6,12 @@ Read/Write tools instead of a plain API call. The command and extra arguments ar
 (llm.command, llm.extra_args).
 
 Every call gets --tools with an explicit list (Read/Write, or none for classification) and
---disallowedTools Bash WebFetch WebSearch. llm.extra_args cannot re-enable these tools.
+--disallowedTools Bash WebFetch WebSearch. llm.extra_args cannot re-enable these tools, and
+neither llm.command nor llm.extra_args may skip the permission checks
+(--dangerously-skip-permissions, --allow-dangerously-skip-permissions,
+--permission-mode bypassPermissions) or load another settings file (--settings, which could set
+permissions.defaultMode bypassPermissions). These flags are matched as literal tokens of the
+arguments (split at whitespace), so a harmless text that contains one of them is rejected too.
 """
 import re
 import subprocess
@@ -17,6 +22,7 @@ from .config import ConfigError
 
 DISALLOWED = ("Bash", "WebFetch", "WebSearch")
 _ALLOW_FLAGS = ("--tools", "--allowedTools", "--allowed-tools")
+_BYPASS_FLAGS = ("--dangerously-skip-permissions", "--allow-dangerously-skip-permissions", "--settings")
 
 
 def fill(template, **values):
@@ -35,9 +41,27 @@ def prompt(cfg, sc, name, **values):
     return fill(text, WANTED_ADS=loc.t(f"wanted.{wanted}"), **values)
 
 
+def _check_permissions(args):
+    """ConfigError if the arguments skip the permission checks or load a settings file (any
+    spelling: case, --flag=value, flag and value in one argument). Tokens are matched literally:
+    a prompt text passed as an argument that contains such a flag is rejected as well."""
+    tokens = [p for a in args for p in str(a).split()]
+    for i, a in enumerate(tokens):
+        name, eq, val = a.lower().partition("=")
+        if name in _BYPASS_FLAGS:
+            raise ConfigError(f"llm.extra_args/llm.command: {a!r} is not allowed (it can skip the permission checks)")
+        if name == "--permission-mode":
+            val = val if eq else (tokens[i + 1].lower() if i + 1 < len(tokens) else "")
+            if val.strip("'\"") == "bypasspermissions":
+                raise ConfigError("llm.extra_args/llm.command: --permission-mode bypassPermissions is not allowed")
+
+
 def check_extra_args(args):
     """Raise ConfigError if llm.extra_args try to allow Bash, WebFetch or WebSearch
-    (--tools/--allowedTools/--allowed-tools, also as --flag=value)."""
+    (--tools/--allowedTools/--allowed-tools, also as --flag=value) or to skip the permission checks
+    (--dangerously-skip-permissions, --allow-dangerously-skip-permissions,
+    --permission-mode bypassPermissions, --settings)."""
+    _check_permissions(args)
     flag = None
     for a in (str(x) for x in args):
         if a.startswith("-"):
@@ -63,6 +87,7 @@ def run(cfg, text, model, tools=("Read", "Write"), max_turns=30, timeout_min=Non
     cmd += extra
     # always last, whatever extra_args say: these tools never run, even if allowed elsewhere
     cmd += ["--disallowedTools", *DISALLOWED]
+    _check_permissions(cmd)   # also llm.command: never run with the permission checks skipped
     timeout = 60 * float(timeout_min or lc.get("timeout_minutes", 60))
     try:
         r = subprocess.run(cmd, input=text, capture_output=True, text=True, timeout=timeout, cwd=cwd)

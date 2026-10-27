@@ -78,8 +78,12 @@ searches:
       sale_factor: 0.85                # asking median -> realistic resale price
       flip_ratio: 0.7                  # working units: candidate below median x 0.7
       defect_price_ratio: 0.6          # defective units: candidate below median x 0.6
+      # first group whose match hits and whose exclude does not; an excluded title falls through to the
+      # next groups. veto (optional): if match and veto both hit, the title gets no group at all
+      # (no fall-through), e.g. "PS5 headset" must not be compared with the PS5 price, while
+      # "PS5 with headset" stays a PS5 (the lookahead skips titles with with/incl/and/without/+/&)
       groups:
-        - {name: PS5, keyword: ps5, match: "\\bps5\\b|playstation 5", exclude: "controller|dualsense|pro\\b", min: 250, max: 600, flip: true}
+        - {name: PS5, keyword: ps5, match: "\\bps5\\b|playstation 5", exclude: "controller|dualsense|pro\\b", veto: "^(?!.*(\\b(with|incl|and|without)\\b|[+&])).*(headset|camera|\\bvr2?\\b)", min: 250, max: 600, flip: true}
         - {name: PS4, keyword: ps4, match: "\\bps4\\b|playstation 4", exclude: "controller|pro\\b", min: 60, max: 250, flip: true}
         - {name: Switch OLED, keyword: switch oled, match: "switch.*oled", min: 150, max: 380, flip: true}
         - {name: Switch Lite, keyword: switch lite, match: "switch\\s*lite", min: 60, max: 200, flip: true}
@@ -100,7 +104,7 @@ searches:
 
     parts_catalog: false               # add the parts catalogue/stock of the deal list to the evaluation prompt
     prefilter: false                   # cheap model drops obvious junk before the evaluation
-    classify: false                    # LLM assigns titles to groups (needs the Claude Code CLI)
+    classify: false                    # LLM assigns titles to groups, also before the candidate selection (needs the Claude Code CLI; {enabled: true, model: haiku, max_per_run: 600})
 
     # The static page of this search (python -m deal_engine render). Without "web" a search gets a
     # generic page (score, price, location). Every label can be plain text or one text per locale

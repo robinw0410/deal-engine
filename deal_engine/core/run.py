@@ -1,4 +1,5 @@
-"""Runs complete searches: per adapter collect -> prefilter -> evaluate -> merge, then
+"""Runs complete searches: per adapter collect (with the LLM evaluator and classify enabled: titles
+classified before the candidate selection) -> prefilter -> evaluate -> merge, then
 classify -> insights -> score -> render.
 
 The evaluator is either "claude" (Claude Code CLI, see deal_engine/core/llm.py) or a callable
@@ -128,6 +129,8 @@ def run_search(cfg, name, evaluator="claude", render=True, log=print):
         save_json(P["state"], {"listings": []})
     result = RunResult(search=name)
     parts = []
+    # classify.max_per_run counts for the whole search run: all adapters and the step after the merge
+    cls_budget = classify.budget(sc)
     for an in sc["adapters"]:
         ar = AdapterResult(name=an)
         result.adapters.append(ar)
@@ -146,7 +149,9 @@ def run_search(cfg, name, evaluator="claude", render=True, log=print):
             continue
         try:
             work = config_mod.paths(cfg, name, an)["work"]
-            c = pipeline.collect(cfg, sc, adapter, log)
+            # with the LLM evaluator, titles are classified before the candidate selection
+            classify_first = evaluator == "claude" and classify.settings(sc) is not None
+            c = pipeline.collect(cfg, sc, adapter, log, classify_first=classify_first, classify_budget=cls_budget)
             for k in ("found", "candidates", "rejected", "postponed", "requests"):
                 setattr(ar, k, c[k])
             if c["batches"]:
@@ -195,7 +200,7 @@ def run_search(cfg, name, evaluator="claude", render=True, log=print):
     if parts:
         try:
             if evaluator == "claude":
-                classify.apply(cfg, sc, P, log)
+                classify.apply(cfg, sc, P, log, budget=cls_budget)
             insights.apply(cfg, sc, P, log)
             score.apply(cfg, sc, P["state"], log=log)
             if render:

@@ -53,7 +53,7 @@ there `deal_engine` is importable without installing it.
 **As a package**, from a release tag:
 
 ```sh
-pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.1"
+pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.2"
 ```
 
 This installs the `deal_engine` package including the built-in prompts and the deal list page.
@@ -106,13 +106,15 @@ One run of a search (`python -m deal_engine run electronics`) does, per adapter:
    listings with the results (price changes, reserved, gone via `check()`), and pick new
    candidates: they must pass the filters, not be known, and be cheap enough relative to the
    market median (`flip_ratio` for working units, `defect_price_ratio` for defective ones).
+   With the LLM evaluator and `classify` enabled, the titles of the possible candidates are
+   classified by a small model **before** this selection (see [Market groups](#market-groups)).
 2. **prefilter** (optional): a cheap model drops obvious junk.
 3. **evaluate**: the LLM reads the candidate batch (including downloaded photos) and writes
    its evaluation: resale price, parts, hours, risk, photo check, questions for the seller.
 4. **merge**: accepted listings go into the state, a markdown report lists new / price changes /
    gone / reserved.
 
-Then for the whole search: **classify** (optional, LLM assigns titles to market groups),
+Then for the whole search: **classify** (optional, LLM assigns titles from tracking and the state to market groups),
 **insights** (time online, price drops, relisted items, sale price from disappeared listings,
 bundles), **score**, **render**.
 
@@ -190,7 +192,11 @@ under `llm:`. Each call gets `--tools` (only Read/Write exist for the evaluator,
 classification), `--allowedTools`, by default `--strict-mcp-config --mcp-config '{"mcpServers": {}}'`
 so that no MCP servers are loaded, and always `--disallowedTools Bash WebFetch WebSearch`, whatever
 `llm.extra_args` say; `extra_args` that allow one of these tools with `--tools`/`--allowedTools` are
-a configuration error. Your own Claude Code settings and hooks still apply to these runs. As a
+a configuration error, and so are `--dangerously-skip-permissions`,
+`--allow-dangerously-skip-permissions` and `--permission-mode bypassPermissions` in
+`llm.extra_args` or `llm.command` (any spelling), as well as `--settings` (a settings file could
+set `permissions.defaultMode: bypassPermissions`). These flags are matched as literal tokens of
+the arguments, so a harmless text argument that contains one of them is rejected too. Your own Claude Code settings and hooks still apply to these runs. As a
 second line of defence, deny these tools in the Claude Code settings of the user that runs
 deal-engine (e.g. a service user), `~/.claude/settings.json`:
 
@@ -206,8 +212,52 @@ photos): evaluation of a batch of 3 candidates (about 35–55 s) and classificat
 (about 13 s), twice; the result files were valid JSON both times and were merged into the state.
 Larger batches, photos and other models have not been tried in this repository. This was done
 with 0.1.x and has **not been re-run since**: not for 0.2.0 (new package layout, prompts moved to
-`deal_engine/core/prompts/<locale>/`, German prompts) and not for 0.2.1 (`--disallowedTools` on
-every call). The command lines are covered by the automated tests with a fake command.
+`deal_engine/core/prompts/<locale>/`, German prompts), not for 0.2.1 (`--disallowedTools` on
+every call) and not for 0.2.2 (classification before the candidate selection). The command lines are covered by the automated tests with a fake command.
+
+### Market groups
+
+`market.groups` of a search is an ordered list. A listing title belongs to the **first** group
+whose `match` regex hits and whose `exclude` regex does not; an excluded title falls through to
+the later groups. All regexes are case-insensitive.
+
+```yaml
+groups:
+  - {name: DualSense, keyword: dualsense, match: "dualsense", exclude: "edge|console", min: 20, max: 90}
+  - {name: PS5, keyword: ps5, match: "\\bps5\\b", exclude: "pro|slim", veto: "headset|camera|^\\W*(ps5\\s+)?dualsense", min: 200, max: 650}
+```
+
+`veto` (optional, since 0.2.2) stops the fall-through: if a group's `match` and its `veto` both
+hit, the title gets **no group at all**, whatever later groups say. Use it for accessories and
+other products whose titles contain the device name of a broad group ("PS5 headset", "DualSense
+for PS5 console" after the DualSense group excluded it, "Switch 2 controller" when there is no
+Switch 2 group). A title the word rules cannot place is not compared with any market price.
+
+Accessories of a group (accessory words of the locale, or `market.accessory_regex`) are skipped,
+bundles of controller-like groups are compared with quantity × the unit median.
+
+With `classify` enabled (`classify: {enabled: true, model: haiku, max_per_run: 600, batch: 150}`)
+and the LLM evaluator (`claude`), `collect` asks the classification model about the titles of the
+listings it is about to consider as candidates **before** selecting them: only titles that some
+group's `match` regex hits (also excluded or vetoed ones), each listing only once (stored in
+`history.db`, table `classify`, key `<adapter>-<source_id>`). After the merge, titles from tracking
+and the state that the word rules place in a group are classified as well. `max_per_run` is the
+limit for one search run: all adapters and the step after the merge share it (each model call
+still has a 10-minute timeout).
+
+A stored result is only used when it is **plausible**: a group named by the model must have a
+`match` regex that hits the title, and that group's `veto` must not hit it (`exclude` is ignored
+for this check, so the model may place "DualSense for PS5 console" in DualSense, but never
+"DualSense" in PS5, nor a title in a group whose veto rules it out). Then it replaces
+the word rules for that listing — in the candidate selection, in tracking (`listing.grp`) and in
+the insights: `device`/`bundle` → that group (and quantity for controller-like groups),
+`accessory` → skipped / no group, `other` → no group, no market comparison. Tracking keeps this
+decision on later runs (the word-rule group does not come back). An implausible result, no
+result, or an unavailable model (logged, the run goes on) leaves the word rules in effect. With a
+callable evaluator (demo, tests) no model is called.
+
+Group regexes (`match`, `exclude`, `veto`) are checked when a search is loaded; an invalid one is
+a configuration error.
 
 ## Extending deal-engine
 
@@ -342,7 +392,7 @@ up somewhat higher. The rest is postponed.
 ### Locale
 
 `locale: de` globally or per search (default `en`). A locale covers bundle quantities
-("3 Stück", "drei Controller"), "inkl./mit" clauses for accessory detection, default accessory
+("3 Stück", "drei Controller"), "inkl./mit/ohne" clauses for accessory detection, default accessory
 and market-exclude words, fraud indicators and their negations ("keine Vorkasse"), stop words for
 relist detection, and the texts deal-engine writes: report, score calculation, negotiation hint,
 message draft, insights, price hints, parts block, page texts and field labels. It also selects

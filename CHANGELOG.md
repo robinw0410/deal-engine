@@ -1,5 +1,70 @@
 # Changelog
 
+## 0.2.2 – 2026-10-27
+
+### Fixed
+
+- **Wrong market groups for candidates.** Candidates were grouped by word rules only (the LLM
+  classification ran after the merge), and a title excluded by one group fell through to the
+  next, broader group: "DualSense for PS5 console" ended up in "PS5" (resale ~400 €), "PS5
+  headset" in "PS5", "Switch 2 controller" in "Nintendo Switch". Fixed by the group `veto` and
+  the classification before the selection (see Added).
+- **Implausible model groups are ignored.** A title the word rules place in "DualSense"
+  ("DualSense funktionsfähig") was shown with the PS5 price: the stored LLM classification (e.g. a
+  shifted index in a batch of 150 titles) overrode the word rules in the insights. A model group is
+  now only used if its `match` regex hits the title and its `veto` does not (`exclude` is ignored for
+  this check) — in
+  the candidate selection, in the insights and in the tracking table; otherwise the word rules
+  decide (`groups.from_classification()`).
+- **Tracking keeps the model's decision.** `history.track()` uses a stored, plausible
+  classification (same title) instead of the word-rule group, and a group the model removed is no
+  longer restored by the word rules on the next run (`COALESCE`). Results of the classification
+  before the selection reach `listing.grp` as well.
+- Locale `de`/`en`: charging stations, docks, stands, kits and cables ("charging station",
+  "charging dock", "charging cable", …) and "docking station"/"dockingstation" are accessory words.
+  A bare "charging" is not ("Switch Lite Charging Port defekt" stays a repair candidate).
+- Locale `de`/`en`: "ohne"/"without" clauses no longer make a device an accessory ("PS5 Konsole
+  ohne Fernbedienung", "Switch Lite ohne Ladekabel").
+- Locales `en`/`de`: a number after "Switch" is not a bundle quantity ("Nintendo Switch 2 Pro
+  Controller" is one controller, not two).
+
+### Added
+
+- **Group `veto`** (regex, case-insensitive): if a group's `match` and `veto` both hit,
+  `match_group()` returns `None` at once, without falling through to later groups. Documented in
+  the README ([Market groups](README.md#market-groups)) and in `config.example.yaml`. Note: a
+  veto leaves a title without group; products that have no group of their own (e.g. a new console
+  generation) are then not compared with any market price until you add a group with its own price
+  range.
+- **Classification before the candidate selection.** With `classify` enabled and the LLM
+  evaluator (`claude`), `pipeline.collect(..., classify_first=True)` (set by `run_search`)
+  classifies the titles of the listings it is about to consider as candidates before `select()`:
+  only titles that some group's `match` hits, not classified yet (table `classify` in
+  `history.db`, same title, key `<adapter>-<source_id>`). `select()` then uses a plausible stored
+  classification: `device`/`bundle` → that group (and quantity for controller-like groups),
+  `accessory` → skipped, `other` → no group, no market comparison. If the model is unavailable, the
+  word rules stay in effect (logged, the run does not fail). With a callable evaluator (demo,
+  tests) no model is called.
+- `classify.max_per_run` is a budget per search run (`classify.Budget`), shared by all adapters'
+  classification before the selection and the step after the merge.
+- Group regexes (`match`, `exclude`, `veto`) are compiled when a search is loaded
+  (`config.search()`); an invalid regex or a group without `name`/`match` is a `ConfigError`.
+- `classify.classify_titles(cfg, sc, con, [(uid, title), …])` (batches, parsing and storing, used by
+  both classification steps), `classify.preselect()`, `classify.settings()`,
+  `classify.correct_tracking()`, `history.classification()`, `groups.from_classification()`,
+  `groups.classified_market_group()`, `groups.check_groups()`, `groups.matches_any()`,
+  `groups.is_bundle_group()`, `pipeline.considered()`; `pipeline.select(..., classified=...)`,
+  `pipeline.collect(..., classify_budget=...)`.
+
+### Security
+
+- `llm.extra_args` (and `llm.command`) must not contain `--dangerously-skip-permissions`,
+  `--allow-dangerously-skip-permissions`, `--permission-mode bypassPermissions` or `--settings`
+  (a settings file can set `permissions.defaultMode: bypassPermissions`); also as `--flag=value`,
+  as one argument with a space, in any letter case: configuration error. The flags are matched as
+  literal tokens, so a text argument that merely mentions one is rejected too. `llm.run()` checks
+  the complete command line before every call.
+
 ## 0.2.1 – 2026-10-27
 
 ### Security

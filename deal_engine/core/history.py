@@ -11,7 +11,7 @@ from statistics import median
 
 from . import clock
 from .filters import has_signal, passes
-from .groups import market_group
+from .groups import classified_market_group, from_classification
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS listing(
@@ -47,22 +47,36 @@ def connect(db):
     return con
 
 
+TITLE_LEN = 200   # titles are stored shortened to this length
+
+
 def uid(it):
     return f"{it['source']}-{it['source_id']}"
+
+
+def classification(con, key, title=None):
+    """Stored LLM classification (grp, qty, kind) of listing `key`, or None. Invalid if the title
+    changed (compared shortened like the stored title)."""
+    r = con.execute("SELECT title, grp, qty, kind FROM classify WHERE uid=?", (key,)).fetchone()
+    if not r or (title is not None and r[0] != (title or "")[:TITLE_LEN]):
+        return None
+    return r[1], r[2] or 1, r[3]
 
 
 def _flag(v):
     return None if v is None else int(bool(v))
 
 
-def _upsert(con, search, it, grp, defect):
+def _upsert(con, search, it, grp, defect, exact=False):
+    """Insert or update a listing. exact: set grp as given, also to NULL (a plausible LLM
+    classification decided it); otherwise a missing word-rule group keeps the stored one."""
     key, p, today = uid(it), it.get("price"), clock.today_str()
     row = con.execute("SELECT price FROM listing WHERE uid=?", (key,)).fetchone()
     if row is None:
         con.execute("""INSERT INTO listing(uid, source, source_id, search, grp, title, defect, published,
                        first_seen, last_seen, first_price, price, private, shipping, distance_km, image, location)
                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (key, it["source"], it["source_id"], search, grp, (it.get("title") or "")[:200], defect,
+                    (key, it["source"], it["source_id"], search, grp, (it.get("title") or "")[:TITLE_LEN], defect,
                      it.get("_published"), today, today, p, p, _flag(it.get("private")),
                      _flag(it.get("shipping_possible")), it.get("distance_km"), it.get("_image"),
                      (it.get("location") or "")[:120] or None))
@@ -70,10 +84,11 @@ def _upsert(con, search, it, grp, defect):
             con.execute("INSERT OR REPLACE INTO price VALUES (?,?,?)", (key, today, p))
         return
     old_p = row[0]
-    con.execute("""UPDATE listing SET last_seen=?, price=?, title=?, grp=COALESCE(?, grp), defect=?,
-                   status='active', gone_date=NULL, image=COALESCE(image, ?), location=COALESCE(location, ?)
-                   WHERE uid=?""",
-                (today, p if p is not None else old_p, (it.get("title") or "")[:200], grp, defect,
+    grp_sql = "?" if exact else "COALESCE(?, grp)"
+    con.execute(f"""UPDATE listing SET last_seen=?, price=?, title=?, grp={grp_sql}, defect=?,
+                    status='active', gone_date=NULL, image=COALESCE(image, ?), location=COALESCE(location, ?)
+                    WHERE uid=?""",
+                (today, p if p is not None else old_p, (it.get("title") or "")[:TITLE_LEN], grp, defect,
                  it.get("_image"), (it.get("location") or "")[:120] or None, key))
     if p is not None and old_p is not None and abs(p - old_p) >= 1:
         con.execute("INSERT OR REPLACE INTO price VALUES (?,?,?)", (key, today, p))
@@ -81,7 +96,9 @@ def _upsert(con, search, it, grp, defect):
 
 def track(db, sc, items, log=print):
     """Store search results. With market groups only listings of a group, otherwise everything
-    that passes the filters."""
+    that passes the filters. A stored, plausible LLM classification of the listing (same title)
+    decides the group instead of the word rules, also when it says "no group" for a listing that
+    is already tracked (the stored group is then cleared, not kept)."""
     mc = sc.get("market") or {}
     groups, flt = mc.get("groups", []), sc.get("filters") or {}
     con = connect(db)
@@ -90,11 +107,21 @@ def track(db, sc, items, log=print):
         for it in items:
             sig = has_signal(it, flt)
             defect = None if sig is None else int(sig)
-            g = market_group(it["title"], it.get("price"), groups, bool(sig), mc.get("accessory_regex"), sc.get("_locale")) \
-                if groups else None
-            if (groups and not g) or (not groups and not passes(it, flt)):
+            exact = False
+            if groups:
+                cls = classification(con, uid(it), it["title"])
+                exact = from_classification(it["title"], cls, groups) is not None
+                g = classified_market_group(it["title"], it.get("price"), groups, cls, bool(sig),
+                                            mc.get("accessory_regex"), sc.get("_locale"))
+            else:
+                g = None
+            if groups and not g:
+                if exact and con.execute("SELECT 1 FROM listing WHERE uid=?", (uid(it),)).fetchone():
+                    _upsert(con, sc["_name"], it, None, defect, exact=True)
                 continue
-            _upsert(con, sc["_name"], it, g["name"] if g else None, defect)
+            if not groups and not passes(it, flt):
+                continue
+            _upsert(con, sc["_name"], it, g["name"] if g else None, defect, exact=exact)
             n += 1
     con.close()
     log(f"  tracking: {n} listings recorded")

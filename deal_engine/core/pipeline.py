@@ -1,6 +1,7 @@
 """Adapter-neutral pipeline for one search and one adapter:
 
   collect   search, update market prices, reconcile the state (price changes, gone, reserved),
+            optionally classify the titles of possible candidates with the LLM (classify_first),
             pick new candidates and write evaluation batches
   prefilter apply a cheap model's prefilter result to the batches (optional)
   merge     take the evaluations into the state and write a short markdown report
@@ -17,12 +18,12 @@ import urllib.request
 from datetime import timedelta
 
 from ..adapters.base import Blocked, check_result
-from . import clock, history
+from . import classify, clock, history
 from . import config as config_mod
 from . import locale as locale_mod
 from .config import ConfigError
 from .filters import fields_failed, has_signal, passes
-from .groups import bundle_qty, is_accessory, match_group
+from .groups import bundle_qty, from_classification, is_accessory, is_bundle_group, match_group
 from .listing import EXTRA_NAME, RESERVED, normalize, shipping_unknown
 from .market import due as market_due, refresh as market_refresh, resale_from_ask, settings as market_settings
 from .util import load_json, num, save_json
@@ -216,27 +217,47 @@ def max_new(sc, adapter_name=None):
     return int(own if own is not None else sc.get("max_new_per_run", 50))
 
 
+def considered(sid, it, known, seen, flt):
+    """The listing is looked at by select() at all: active, passes the filters, not in the state, and
+    not seen before (or seen, but 10 % cheaper now)."""
+    if sid in known or it["status"] != "active" or not passes(it, flt):
+        return False
+    prev = seen.get(sid)
+    return not prev or (it.get("price") is not None and bool(prev.get("price")) and it["price"] <= prev["price"] * 0.9)
+
+
 def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPPING_COST, adapter_name=None,
-           state_listings=(), loc=None):
+           state_listings=(), loc=None, classified=None):
     """New candidates: pass the filters, are not known, are cheap enough relative to the market.
-    Unknown shipping costs count as unknown_cost, never as 0. Returns (candidates, postponed)."""
+    Unknown shipping costs count as unknown_cost, never as 0. Returns (candidates, postponed).
+
+    classified: {source_id: (group name, qty, kind)} from the LLM classification; if plausible
+    (groups.from_classification: a named group's match regex hits the title) it replaces the word
+    rules for that listing: device/bundle -> that group (qty for controller-like groups),
+    accessory -> skipped, other -> no group (no market comparison). Implausible: word rules."""
     loc = loc or locale_mod.get(sc.get("_locale"))
     flt = sc.get("filters") or {}
     mc = sc.get("market") or {}
     s = market_settings(mc)
     groups = mc.get("groups") or []
-    cands, too_expensive, no_signal = [], 0, 0
+    classified = classified or {}
+    cands, too_expensive, no_signal, n_cls = [], 0, 0, 0
     for sid, it in items.items():
-        if sid in known or it["status"] != "active" or not passes(it, flt):
-            continue
-        prev = seen.get(sid)
-        # seen before: only again after a price drop of at least 10 %
-        if prev and not (it.get("price") is not None and prev.get("price") and it["price"] <= prev["price"] * 0.9):
+        if not considered(sid, it, known, seen, flt):
             continue
         sig = has_signal(it, flt)
-        g = match_group(it["title"], groups) if groups else None
-        if g and is_accessory(it["title"], mc.get("accessory_regex"), loc):
-            continue   # "case for <device>" is not a deal on the device
+        c = from_classification(it["title"], classified.get(sid), groups)
+        if c:
+            kind, g, cq = c
+            if kind == "accessory":
+                n_cls += 1
+                continue
+            qty = cq if is_bundle_group(g) else 1
+        else:
+            g = match_group(it["title"], groups) if groups else None
+            if g and is_accessory(it["title"], mc.get("accessory_regex"), loc):
+                continue   # "case for <device>" is not a deal on the device
+            qty = None
         m = market.get(g["name"]) if g else None
         ship = mark_shipping(it, unknown_cost, loc)
         if m:
@@ -244,7 +265,8 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
             it["market_resale_estimate"] = resale_from_ask(m, s["sale_factor"])
             ratio = s["max_price_ratio"] if sig is None else s["defect_price_ratio"] if sig else s["flip_ratio"]
             total = (it.get("price") or 0) + ship
-            qty = bundle_qty(it["title"], g, loc)   # "3 controllers" is compared with 3 x the unit median
+            if qty is None:
+                qty = bundle_qty(it["title"], g, loc)   # "3 controllers" is compared with 3 x the unit median
             if it.get("price") is not None and total > m["median"] * qty * float(ratio):
                 too_expensive += 1
                 continue
@@ -252,6 +274,8 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
             no_signal += 1   # no defect signal and no market price to judge a flip
             continue
         cands.append(it)
+    if n_cls:
+        log(f"{n_cls} listings skipped as accessories (LLM classification)")
     if no_signal:
         log(f"{no_signal} listings without defect signal and without market price skipped")
     if too_expensive:
@@ -317,8 +341,13 @@ def download_images(urls, folder, prefix, root, adapter=None):
     return files
 
 
-def collect(cfg, sc, adapter, log=print):
-    """Returns {"found", "candidates", "rejected", "postponed", "batches", "requests", "blocked", "problems"}."""
+def collect(cfg, sc, adapter, log=print, classify_first=False, classify_budget=None):
+    """Returns {"found", "candidates", "rejected", "postponed", "batches", "requests", "blocked", "problems"}.
+
+    classify_first: classify the titles of the listings select() will look at with the LLM before
+    selecting (core/classify.py, needs classify enabled in the search); run_search sets it with the
+    LLM evaluator only. If the model is unavailable, the word rules decide. classify_budget: the
+    classify.Budget of the search run (max_per_run for all adapters and the step after the merge)."""
     name = sc["_name"]
     loc = locale_mod.for_search(cfg, sc)
     P = config_mod.paths(cfg, name, adapter.name)
@@ -351,8 +380,20 @@ def collect(cfg, sc, adapter, log=print):
         known = {(l.get("sources") or {}).get(adapter.name) for l in state["listings"]}
         seen = load_json(P["seen"], {})
         unknown_cost = float((cfg.get("shipping") or {}).get("unknown_cost", UNKNOWN_SHIPPING_COST))
+        classified = {}
+        if classify_first and classify.settings(sc) is not None and (mc.get("groups") or []):
+            flt = sc.get("filters") or {}
+            titles = {history.uid(it): it["title"] for sid, it in items.items() if considered(sid, it, known, seen, flt)}
+            try:
+                by_uid = classify.preselect(cfg, sc, titles, P["history"], log, budget=classify_budget)
+            except ConfigError:
+                raise
+            except Exception as e:   # never break a run over the classification: word rules stay
+                log(f"  classification before selection failed, word rules stay: {type(e).__name__}: {e}")
+                by_uid = {}
+            classified = {it["source_id"]: by_uid[history.uid(it)] for it in items.values() if history.uid(it) in by_uid}
         cands, skipped = select(items, known, seen, market, sc, log, unknown_cost, adapter.name,
-                                state["listings"], loc)
+                                state["listings"], loc, classified=classified)
         log(f"{len(cands)} new candidates for evaluation" + (f" ({skipped} postponed to the next run)" if skipped else ""))
 
         n_img = int(sc.get("images", 1))

@@ -23,12 +23,12 @@ EN = {
                      "ten": 10, "pair": 2},
     "qty_units": r"x|×|pcs\.?|pieces?|units?",
     "qty_nouns": r"controllers?|gamepads?|dualsense|dualshock|pads",
-    "not_qty": r"(series|gen\.?|generation|version|model|mk|v|ps|edition|rev\.?)\s*$",
-    "with_words": r"\bwith\b|\bincl\b\.?|\bincluding\b|\+|&|\band\b",
-    "accessory": (r"\bcase\b|\bcover\b|skin|sleeve|\bstand\b|holder|mount|charging (station|dock)|charger|"
+    "not_qty": r"(series|gen\.?|generation|version|model|mk|v|ps|edition|rev\.?|switch)\s*$",
+    "with_words": r"\bwith\b|\bwithout\b|\bincl\b\.?|\bincluding\b|\+|&|\band\b",
+    "accessory": (r"\bcase\b|\bcover\b|skin|sleeve|\bstand\b|holder|mount|charging\s*(station|dock|stand|kit|cable|kabel)|charger|"
                   r"\bcable\b|\busb\b|empty box|\bbox only\b|packaging|dummy|power ?bank|battery pack|"
                   r"screen protector|\bbag\b|sticker|steering wheel|remote|\bgrips?\b|thumb ?grips?|"
-                  r"\bcaps\b|docking station|\bdock only\b"),
+                  r"\bcaps\b|docking ?station|\bdock only\b"),
     "market_exclude": (r"broken|defect|faulty|for parts|not working|wanted|buying|swap|trade|repair|"
                        r"locked|icloud|blacklist"),
     "negations": r"no|not|without|none|non|zero|nothing",
@@ -147,13 +147,13 @@ DE = {
                      "neun": 9, "zehn": 10, **EN["number_words"]},
     "qty_units": r"x|×|stk\.?|stück|stueck|pcs\.?|pieces?",
     "qty_nouns": r"controllers?|gamepads?|dualsense|dualshock|pads",
-    "not_qty": r"(series|serie|gen\.?|generation|version|modell|model|mk|v|ps|edition|rev\.?)\s*$",
-    "with_words": (r"\bmit\b|\binkl\b\.?|\binklusive\b|\bsamt\b|\bplus\b|\bund\b|\bwith\b|\bincl\b\.?|"
+    "not_qty": r"(series|serie|gen\.?|generation|version|modell|model|mk|v|ps|edition|rev\.?|switch)\s*$",
+    "with_words": (r"\bmit\b|\bohne\b|\binkl\b\.?|\binklusive\b|\bsamt\b|\bplus\b|\bund\b|\bwith\b|\bwithout\b|\bincl\b\.?|"
                    r"\bincluding\b|\+|&"),
     "accessory": (r"hülle|huelle|\bcase\b|skin|ständer|staender|halterung|ladestation|ladekabel|\bkabel\b|karton|"
                   r"verpackung|attrappe|powerbank|power bank|akku ?pack|ladegerät|ladegeraet|charger|\bstand\b|"
                   r"\bcover\b|folie|tasche|aufkleber|lenkrad|fernbedienung|\bgrips?\b|aufsatz|thumb ?grips?|kappen|"
-                  r"lade ?dock|dockingstation|\busb\b|halter\b|leerkarton|nur (die )?ovp"),
+                  r"lade ?dock|docking ?station|charging\s*(station|dock|stand|kit|cable|kabel)|\busb\b|halter\b|leerkarton|nur (die )?ovp"),
     "market_exclude": (r"defekt|bastler|für teile|fuer teile|ersatzteil|kaputt|drift|suche|ankauf|tausch|reparatur|"
                        r"gesperrt|icloud|broken|defect|for parts|not working|wanted|repair"),
     "negations": r"kein|keine|keinen|keiner|keines|keinerlei|nicht|nichts|ohne|nie|no|not|without|none|nothing",

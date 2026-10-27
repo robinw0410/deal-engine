@@ -5,6 +5,11 @@ A group in the config looks like
 "match"/"exclude" are case-insensitive regexes on the title, min/max the plausible price range of a
 working unit (used to keep broken or mispriced listings out of the market statistics).
 
+Groups are checked in order; the first group whose "match" hits and whose "exclude" does not
+wins. An excluded title falls through to the later groups. The optional "veto" (regex) stops
+that: if "match" and "veto" both hit, the title gets no group at all ("PS5 headset" must not
+fall through to a broader group).
+
 Quantity words, "with/inkl." clauses and the default accessory words come from the locale
 (core/locale.py); every function takes an optional locale (default English).
 """
@@ -21,11 +26,28 @@ def _loc(loc):
 
 
 def match_group(title, groups):
+    """First group whose match hits and whose exclude does not; None if a matching group's veto hits."""
     t = title or ""
     for g in groups or []:
-        if re.search(g["match"], t, re.I) and not (g.get("exclude") and re.search(g["exclude"], t, re.I)):
+        if not re.search(g["match"], t, re.I):
+            continue
+        if g.get("veto") and re.search(g["veto"], t, re.I):
+            return None   # no fall-through to later (broader) groups
+        if not (g.get("exclude") and re.search(g["exclude"], t, re.I)):
             return g
     return None
+
+
+def matches_any(title, groups):
+    """Some group's match regex hits (ignoring exclude and veto): a title the LLM classification may
+    assign to a group although the word rules give none."""
+    t = title or ""
+    return any(re.search(g["match"], t, re.I) for g in groups or [])
+
+
+def is_bundle_group(group):
+    """Quantities are only read for controller-like groups (BUNDLE_GROUP) or groups with "bundle": true."""
+    return isinstance(group, dict) and (group.get("bundle") is True or bool(BUNDLE_GROUP.search(str(group.get("name")))))
 
 
 def bundle_qty(title, group=None, loc=None):
@@ -66,3 +88,58 @@ def market_group(title, price, groups, defect=False, accessory_regex=None, loc=N
     if not defect and price is not None and not (g.get("min", 0) <= price <= g.get("max", 1e9)):
         return None
     return g
+
+
+def from_classification(title, cls, groups):
+    """Interpret a stored LLM classification (grp, qty, kind) of `title`.
+
+    Returns None when there is none or when it is implausible, i.e. the model names a group whose
+    match regex does not hit the title or whose veto does (exclude is ignored here: the model may
+    overrule a fall-through, but never assign a group that does not fit or that the config rules out
+    for this title); the word rules decide then.
+    Otherwise (kind, group dict or None, qty) with kind device/bundle/accessory/other
+    (device/bundle without a known group count as other)."""
+    if not cls:
+        return None
+    grp, q, kind = cls
+    if kind in ("device", "bundle"):
+        if not grp:
+            return "other", None, 1
+        g = next((x for x in groups or [] if x["name"] == grp), None)
+        if not g or not re.search(g["match"], title or "", re.I) \
+                or (g.get("veto") and re.search(g["veto"], title or "", re.I)):
+            return None
+        try:
+            q = max(1, int(q or 1))
+        except (TypeError, ValueError):
+            q = 1
+        return kind, g, q
+    return (kind if kind in ("accessory", "other") else "other"), None, 1
+
+
+def classified_market_group(title, price, groups, cls, defect=False, accessory_regex=None, loc=None):
+    """market_group() with a plausible LLM classification taking precedence over the word rules:
+    only single devices (or bundles of quantity 1) of a group, price within its range unless defective."""
+    r = from_classification(title, cls, groups)
+    if r is None:
+        return market_group(title, price, groups, defect, accessory_regex, loc)
+    _, g, q = r
+    if g is None or q > 1:
+        return None
+    if not defect and price is not None and not (g.get("min", 0) <= price <= g.get("max", 1e9)):
+        return None
+    return g
+
+
+def check_groups(groups, where="market.groups"):
+    """ValueError with a readable message if a group has no name/match or an invalid regex."""
+    for i, g in enumerate(groups or []):
+        if not isinstance(g, dict) or not g.get("name") or not g.get("match"):
+            raise ValueError(f"{where}[{i}]: every group needs 'name' and 'match'")
+        for k in ("match", "exclude", "veto"):
+            if g.get(k) is None:
+                continue
+            try:
+                re.compile(str(g[k]), re.I)
+            except re.error as e:
+                raise ValueError(f"{where}[{i}] ({g['name']}): invalid regex in '{k}': {e}")
