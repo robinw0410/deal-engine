@@ -73,7 +73,7 @@ def test_pyproject_lists_only_deal_engine_packages():
     for p in pkgs:
         assert (REPO / p.replace(".", "/") / "__init__.py").exists(), p
     assert all(k.startswith("deal_engine") for k in st.get("package-data", {}))
-    assert data["project"]["version"] == deal_engine.__version__ == "0.2.5"
+    assert data["project"]["version"] == deal_engine.__version__ == "0.2.6"
 
 
 def test_builtin_prompts_ship_with_the_package():

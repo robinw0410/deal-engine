@@ -23,7 +23,7 @@ from . import config as config_mod
 from . import locale as locale_mod
 from .config import ConfigError
 from .filters import fields_failed, has_signal, passes, title_failed
-from .groups import bundle_qty, drop_part, from_classification, is_accessory, is_bundle_group, match_group
+from .groups import bundle_qty, drop_part, extras_value, from_classification, is_accessory, is_bundle_group, match_group
 from .listing import EXTRA_NAME, RESERVED, normalize, shipping_unknown
 from .market import due as market_due, refresh as market_refresh, resale_from_ask, settings as market_settings
 from .util import load_json, num, save_json
@@ -32,7 +32,7 @@ from .util import load_json, num, save_json
 # extra fields of the listing (km, year, ...) are carried as well
 CARRY = ("distance_km", "shipping_possible", "shipping_cost_eur", "shipping_unknown", "shipping_note", "private",
          "condition", "auction_end", "best_offer", "market_median", "market_group", "market_n",
-         "market_resale_estimate")
+         "market_resale_estimate", "market_extras")
 UNKNOWN_SHIPPING_COST = 15   # default for shipping.unknown_cost
 # fields the evaluation must not overwrite
 PROTECTED = {"id", "urls", "url", "source", "source_id", "sources", "price", "price_history", "first_seen",
@@ -359,7 +359,11 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
             total = (it.get("price") or 0) + ship
             if qty is None:
                 qty = bundle_qty(it["title"], g, loc)   # "3 controllers" is compared with 3 x the unit median
-            if it.get("price") is not None and total > m["median"] * qty * float(ratio):
+            # devices with extras ("PS4 + 2 Controller"): + n x the extra group's median, threshold only
+            extra_eur, extra_parts = extras_value(it["title"], g, market, loc)
+            if extra_parts:
+                it["market_extras"] = [{"group": n_, "count": c_, "median": market[n_]["median"]} for n_, c_ in extra_parts]
+            if it.get("price") is not None and total > (m["median"] * qty + extra_eur) * float(ratio):
                 too_expensive += 1
                 continue
         elif sig is False:

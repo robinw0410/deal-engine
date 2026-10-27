@@ -53,7 +53,7 @@ there `deal_engine` is importable without installing it.
 **As a package**, from a release tag:
 
 ```sh
-pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.5"
+pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.6"
 ```
 
 This installs the `deal_engine` package including the built-in prompts and the deal list page.
@@ -238,6 +238,15 @@ bundles of controller-like groups are compared with quantity × the unit median.
 with extras that carry their own value ("Konsole mit 6 Spielen", "console + Zelda"; the locale's
 `bundle_extras` after a with-word, not after "ohne"/"without") is a normal candidate of its group
 but not counted as a single unit in the market statistics (since 0.2.5).
+
+Extras with their own market group raise the **candidate threshold** of a device (since 0.2.6):
+`extras: {"<group>": "<regex counting its units>"}` on a group, e.g. on a console
+`extras: {"Controller": "controller\\w*|gamepads?"}`. The threshold becomes
+(device median + n × that group's median) × ratio, n counted from the title ("+ 2 Controller" = 2,
+"+ Controller" = 1, "mit zwei Controllern" = 2; "ohne Controller" and "Controller-Ladestation" = 0,
+at most 8). Extras without market data and anything no group covers (games) add nothing. Only
+the candidate selection uses it (the candidate gets `market_extras`); the evaluation, the market
+statistics and `market_resale_estimate` are unchanged.
 
 With `classify` enabled (`classify: {enabled: true, model: haiku, max_per_run: 600, batch: 150}`)
 and the LLM evaluator (`claude`), `collect` asks the classification model about the titles of the

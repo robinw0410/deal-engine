@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.6 – 2026-10-27
+
+### Added
+
+- **Extras in the candidate threshold** (group setting `extras: {"<group>": "<regex>"}`). A device
+  listed with extras that have their own market group ("PS4 + 2 Controller + 6 Spiele") was compared
+  with the median of the device alone. The threshold is now (device median + n × the extra group's
+  median) × ratio; n is counted from the title (`groups.extras_count`: numbers and number words,
+  "+ Controller" = 1, negations and accessory/part words right after it = 0, at most 8). Extras
+  without market data and games add nothing. Candidate selection only; the candidate carries
+  `market_extras`. Groups are checked at load (other group, valid regex). Without `extras` nothing
+  changes.
+
 ## 0.2.5 – 2026-10-27
 
 ### Fixed

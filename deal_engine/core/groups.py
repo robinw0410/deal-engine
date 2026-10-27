@@ -98,6 +98,41 @@ def has_extras(title, loc=None):
     return False
 
 
+# extras that come with a device and count for its candidate threshold: "+ 2 Controller", "mit zwei Controllern"
+_EXTRA_ADJ = r"(?:original\w*|orig\.?|weitere\w*|zusätzliche\w*|zusaetzliche\w*|additional|extra|neue\w*|new|wireless|kabellose\w*)\s+"
+
+
+def extras_count(title, extra_regex, loc=None):
+    """How many units of an extra the title lists with the device ("PS4 + 2 Controller" = 2, "+ Controller"
+    = 1, "mit zwei Controllern" = 2, "ohne Controller" = 0), at most 8 in total."""
+    L = _loc(loc)
+    num = r"\d{1,2}|" + "|".join(sorted(map(re.escape, L.number_words), key=len, reverse=True))
+    rx = re.compile(r"(?:\b(" + num + r")\s*(?:x\s*)?)?(?:" + _EXTRA_ADJ + r")?(?:" + extra_regex + r")", re.I)
+    n = 0
+    for m in rx.finditer(title or ""):
+        if re.search(r"\b(?:" + L.negations + r")\s+(?:\w+\s+)?$", title[:m.start()], re.I):
+            continue   # "ohne Controller", "without controller"
+        if re.match(r"[\s-]*(?:" + L.accessory + r"|stick|tasten?|buttons?|port|buchse|akku|battery|platine)", title[m.end():], re.I):
+            continue   # "Controller Ladestation", "Controller-Stick defekt": not a controller
+        v = (m.group(1) or "").lower()
+        n += L.number_words.get(v) or (int(v) if v.isdigit() else 1)
+    return max(0, min(n, 8))
+
+
+def extras_value(title, group, market, loc=None):
+    """Market value of the extras a device listing includes, for the candidate threshold only:
+    group "extras": {"<other group>": "<regex counting its units>"}; n x that group's median.
+    Extras without market data (or games, which no group covers) add nothing. Returns (eur, [(name, n)])."""
+    total, parts = 0, []
+    for name, extra_rx in ((group or {}).get("extras") or {}).items():
+        m = (market or {}).get(name)
+        n = extras_count(title, extra_rx, loc)
+        if n and m and m.get("median"):
+            total += n * m["median"]
+            parts.append((name, n))
+    return total, parts
+
+
 PARTS_MODES = ("llm", "skip", "bundles", "accept")
 
 
@@ -200,3 +235,15 @@ def check_groups(groups, where="market.groups"):
                 re.compile(str(g[k]), re.I)
             except re.error as e:
                 raise ValueError(f"{where}[{i}] ({g['name']}): invalid regex in '{k}': {e}")
+        ex = g.get("extras")
+        if ex is not None:
+            if not isinstance(ex, dict):
+                raise ValueError(f"{where}[{i}] ({g['name']}): 'extras' must map group names to regexes")
+            names = {x.get("name") for x in groups if isinstance(x, dict)}
+            for name, rx in ex.items():
+                if name not in names or name == g["name"]:
+                    raise ValueError(f"{where}[{i}] ({g['name']}): extras group '{name}' is not another group")
+                try:
+                    re.compile(str(rx), re.I)
+                except re.error as e:
+                    raise ValueError(f"{where}[{i}] ({g['name']}): invalid regex in extras '{name}': {e}")
