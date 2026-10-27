@@ -84,6 +84,20 @@ def is_accessory(title, accessory_regex=None, loc=None):
     return bool(re.search(accessory_regex or L.accessory, t, re.I))
 
 
+def has_extras(title, loc=None):
+    """A device listed together with extras that carry their own value ("PS4 mit 6 Spielen",
+    "Switch + Zelda"): fine as a candidate, but not a single unit for the market statistics.
+    Only with-clauses count ("ohne Spiele" does not); the extras are the locale's bundle_extras."""
+    L = _loc(loc)
+    for m in L.with_clause.finditer(title or ""):
+        clause = m.group(0)
+        for x in L.bundle_extras.finditer(clause):
+            joins = list(L.with_word.finditer(clause, 0, x.start()))
+            if joins and not L.without.search(joins[-1].group(0)):
+                return True   # the last joining word before the extra is not "ohne"/"without"
+    return False
+
+
 PARTS_MODES = ("llm", "skip", "bundles", "accept")
 
 
@@ -123,9 +137,10 @@ def drop_part(title, mode, kind=None, part_regex=None, loc=None):
 
 def market_group(title, price, groups, defect=False, accessory_regex=None, loc=None):
     """Group for market statistics and tracking: no accessories, no bundles, price within the
-    group's plausible range (defective units are allowed below the range)."""
+    group's plausible range (defective units are allowed below the range), no device with extras
+    such as games ("PS4 mit 6 Spielen")."""
     g = match_group(title, groups)
-    if not g or is_accessory(title, accessory_regex, loc) or bundle_qty(title, g, loc) > 1:
+    if not g or is_accessory(title, accessory_regex, loc) or bundle_qty(title, g, loc) > 1 or has_extras(title, loc):
         return None
     if not defect and price is not None and not (g.get("min", 0) <= price <= g.get("max", 1e9)):
         return None

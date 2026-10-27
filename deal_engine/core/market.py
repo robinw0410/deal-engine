@@ -16,7 +16,7 @@ from datetime import timedelta
 from . import clock
 from . import locale as locale_mod
 from .filters import has_signal
-from .groups import bundle_qty, is_accessory, match_group
+from .groups import bundle_qty, has_extras, is_accessory, match_group
 from .util import median
 
 DEFAULTS = {
@@ -51,6 +51,8 @@ def estimate(items, group, groups, flt=None, mc=None, loc=None):
         if p is None or has_signal(it, flt) or re.search(excl, t, re.I):
             continue
         if match_group(t, groups) is not group or is_accessory(t, acc, loc) or bundle_qty(t, group, loc) > 1:
+            continue
+        if has_extras(t, loc):   # "PS4 mit 6 Spielen" is not a single unit
             continue
         if not (group.get("min", 0) <= p <= group.get("max", 1e9)):
             continue

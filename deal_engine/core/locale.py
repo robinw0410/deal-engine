@@ -109,6 +109,10 @@ EN = {
     "qty_nouns": r"controllers?|gamepads?|dualsense|dualshock|pads",
     "not_qty": r"(series|gen\.?|generation|version|model|mk|v|ps|edition|rev\.?|switch|playstation|elite)\s*$",
     "with_words": r"\bwith\b|\bwithout\b|\bincl\b\.?|\bincluding\b|\+|&|\band\b",
+    # extras that make a device listing a bundle ("PS4 with 6 games"): not counted as a single unit in the
+    # market statistics (groups.has_extras)
+    "bundle_extras": r"\bgames?\b|fifa|call of duty|zelda|mario|pok[eé]mon",
+    "without": r"^\W*(without|ohne)\b",
     "accessory": (r"\bcase\b|\bcover\b|skin|sleeve|\bstand\b|holder|mount|charging\s*(station|dock|stand|kit|cable|kabel)|charger|"
                   r"\bcable\b|\busb\b|empty box|\bbox only\b|packaging|dummy|power ?bank|battery pack|"
                   r"screen protector|\bbag\b|sticker|steering wheel|remote|\bgrips?\b|thumb ?grips?|"
@@ -241,6 +245,8 @@ DE = {
     "not_qty": r"(series|serie|gen\.?|generation|version|modell|model|mk|v|ps|edition|rev\.?|switch|playstation|elite)\s*$",
     "with_words": (r"\bmit\b|\bohne\b|\binkl\b\.?|\binklusive\b|\bsamt\b|\bplus\b|\bund\b|\bwith\b|\bwithout\b|\bincl\b\.?|"
                    r"\bincluding\b|\+|&"),
+    "bundle_extras": r"\bspiel\w*|\bgames?\b|fifa|\bfc\s?2\d|call of duty|zelda|mario|pok[eé]mon",
+    "without": r"^\W*(ohne|without)\b",
     "accessory": (r"hülle|huelle|\bcase\b|skin|ständer|staender|halterung|ladestation|ladekabel|\bkabel\b|karton|"
                   r"verpackung|attrappe|powerbank|power bank|akku ?pack|ladegerät|ladegeraet|charger|\bstand\b|"
                   r"\bcover\b|folie|tasche|aufkleber|lenkrad|fernbedienung|\bgrips?\b|aufsatz|thumb ?grips?|kappen|"
@@ -383,8 +389,11 @@ class Locale:
         self.not_qty = re.compile(d["not_qty"], re.I)
         # "Switch Lite with charger", "PS5 inkl. Kabel + Hülle": accessories that come WITH a device
         self.with_clause = re.compile(r"(?:" + d["with_words"] + r")\s*(?:\d+\s*)?(?:x\s*)?(?:[\w.-]+\s+){0,2}?"
-                                      r"[\w.-]+(?:\s+(?:" + d["with_words"] + r"|,)\s*[\w.-]+)*", re.I)
+                                      r"[\w.-]+(?:\s*(?:" + d["with_words"] + r"|,)\s*(?:\d+\s*)?(?:x\s*)?[\w.-]+)*", re.I)
         self.accessory = d["accessory"]
+        self.bundle_extras = re.compile(d["bundle_extras"], re.I)
+        self.without = re.compile(d["without"], re.I)
+        self.with_word = re.compile(d["with_words"], re.I)
         self.part = d["part"]
         self.part_state = re.compile(d["part_state"], re.I)
         self.part_bundle = d["part_bundle"]

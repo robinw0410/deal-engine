@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.5 – 2026-10-27
+
+### Fixed
+
+- **Comma lists after a with-word** ("Switch mit Spielen, Hülle und Tasche", "PS4 Slim mit Controller,
+  Kabel, Hülle") made the bundle an accessory: the with-clause needed a space before the comma, so
+  ", Hülle" stayed. Items of a with-clause chain may now also carry a quantity ("+ 2 Controller + 6
+  Spiele").
+- **Devices with games in the market statistics.** A device listed with extras of their own value
+  ("PS4 mit 6 Spielen", "Konsole + Zelda") counted as a single unit and raised the group median.
+  `groups.has_extras()` (locale `bundle_extras` after a with-word; "ohne Spiele" does not count) keeps
+  them out of `market.estimate()` and `groups.market_group()`; as candidates they are unchanged.
+
 ## 0.2.4 – 2026-10-27
 
 ### Added

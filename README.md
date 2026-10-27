@@ -53,7 +53,7 @@ there `deal_engine` is importable without installing it.
 **As a package**, from a release tag:
 
 ```sh
-pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.4"
+pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.5"
 ```
 
 This installs the `deal_engine` package including the built-in prompts and the deal list page.
@@ -234,7 +234,10 @@ for PS5 console" after the DualSense group excluded it, "Switch 2 controller" wh
 Switch 2 group). A title the word rules cannot place is not compared with any market price.
 
 Accessories of a group (accessory words of the locale, or `market.accessory_regex`) are skipped,
-bundles of controller-like groups are compared with quantity × the unit median.
+bundles of controller-like groups are compared with quantity × the unit median. A device listed
+with extras that carry their own value ("Konsole mit 6 Spielen", "console + Zelda"; the locale's
+`bundle_extras` after a with-word, not after "ohne"/"without") is a normal candidate of its group
+but not counted as a single unit in the market statistics (since 0.2.5).
 
 With `classify` enabled (`classify: {enabled: true, model: haiku, max_per_run: 600, batch: 150}`)
 and the LLM evaluator (`claude`), `collect` asks the classification model about the titles of the
@@ -476,7 +479,7 @@ discarded, as before.
 ### Locale
 
 `locale: de` globally or per search (default `en`). A locale covers bundle quantities
-("3 Stück", "drei Controller"), "inkl./mit/ohne" clauses for accessory detection, default accessory
+("3 Stück", "drei Controller"), "inkl./mit/ohne" clauses for accessory detection, bundle extras, default accessory
 and market-exclude words, fraud indicators and their negations ("keine Vorkasse"), stop words for
 relist detection, and the texts deal-engine writes: report, score calculation, negotiation hint,
 message draft, insights, price hints, parts block, page texts and field labels. It also selects
