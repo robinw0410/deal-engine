@@ -26,7 +26,7 @@ from .config import ConfigError
 from .filters import fields_failed, has_signal, hook_failed, passes, title_failed
 from .groups import bundle_qty, drop_part, extras_value, from_classification, is_accessory, is_bundle_group, match_group
 from .listing import EXTRA_NAME, RESERVED, normalize, shipping_unknown
-from .market import due as market_due, refresh as market_refresh, resale_from_ask, settings as market_settings
+from .market import extras_resale, due as market_due, refresh as market_refresh, resale_from_ask, settings as market_settings
 from .util import load_json, num, save_json
 
 # fields copied from a candidate into a new state entry (if the evaluation did not set them);
@@ -368,7 +368,9 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
             # devices with extras ("PS4 + 2 Controller"): + n x the extra group's median, threshold only
             extra_eur, extra_parts = extras_value(it["title"], g, market, loc)
             if extra_parts:
-                it["market_extras"] = [{"group": n_, "count": c_, "median": market[n_]["median"]} for n_, c_ in extra_parts]
+                # the resale estimate gets the extras too (same sale_factor logic), the score cap uses it
+                extra_resale, it["market_extras"] = extras_resale(extra_parts, market, s["sale_factor"])
+                it["market_resale_estimate"] += extra_resale
             if it.get("price") is not None and total > (m["median"] * qty + extra_eur) * float(ratio):
                 too_expensive += 1
                 continue

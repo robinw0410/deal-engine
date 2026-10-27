@@ -185,6 +185,19 @@ def is_part(title, part_regex=None, loc=None):
     return bool(re.search(part_regex or L.part, t, re.I))
 
 
+def is_spare_part(title, loc=None):
+    """Strong evidence for a part: a part noun before "Ersatzteil"/"spare part" ("PS2 Leergehäuse Original
+    Ersatzteil", "Lüfter Kühler Fan PS4 Ersatzteil", "Controller Port Anschlussleiste Ersatzteil"), or a
+    title starting with it ("Ersatzteil für PS4 Gehäuse"). Not: a noun with a state word ("Xbox One S
+    Ersatzteile Board defekt", "iPhone 11 Ersatzteil Rahmen verbogen": a device for parts), a device sold
+    "als Ersatzteil"/"for parts" (removed first, part_state), anything naming a console (part_veto, also
+    "Lüfter für PS4 Konsole Ersatzteil": precision over recall)."""
+    L = _loc(loc)
+    if L.part_veto.search(title or ""):
+        return False
+    return bool(L.part_spare.search(L.part_state.sub(" ", title or "")))
+
+
 def is_part_bundle(title, loc=None):
     """The title offers several parts ("Konvolut Mainboards", "Ersatzteilpaket", "lot of 5 screens");
     quantities count from 2 on, so model numbers ("X230") and "1x" are no bundles."""
@@ -197,12 +210,18 @@ def drop_part(title, mode, kind=None, part_regex=None, loc=None):
     kind: of a plausible LLM classification, None without one.
       llm (default)  only listings the classification calls "part", part bundles are kept (as in
                      0.2.3); the word rule is off
-      skip           kind "part", or no device/bundle classification and the word rule (is_part) hits
+      skip           kind "part", "Ersatzteil" + part noun (is_spare_part, even against a device
+                     classification), or no device/bundle classification and the word rule (is_part) hits
       bundles        like skip, but part bundles (is_part_bundle) are kept
       accept         never (a "part" is evaluated like a listing without group)"""
     if mode == "accept":
         return False
-    part = kind == "part" or (mode != "llm" and kind not in ("device", "bundle") and is_part(title, part_regex, loc))
+    if kind == "part":
+        part = True
+    elif mode == "llm":
+        part = False
+    else:   # "Ersatzteil" + part noun wins over a device classification, the word rule does not
+        part = is_spare_part(title, loc) or (kind not in ("device", "bundle") and is_part(title, part_regex, loc))
     return part and not (mode in ("llm", "bundles") and is_part_bundle(title, loc))
 
 

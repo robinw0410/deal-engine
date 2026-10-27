@@ -53,7 +53,7 @@ there `deal_engine` is importable without installing it.
 **As a package**, from a release tag:
 
 ```sh
-pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.7"
+pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.8"
 ```
 
 This installs the `deal_engine` package including the built-in prompts and the deal list page.
@@ -245,9 +245,12 @@ Extras with their own market group raise the **candidate threshold** of a device
 (device median + n × that group's median) × ratio, n counted from the title ("+ 2 Controller" = 2,
 "+ Controller" = 1, "mit zwei Controllern" = 2; "ohne Controller" and "Controller-Ladestation" = 0,
 at most 8). Extras without market data and anything no group covers (games) add nothing. Only
-the candidate selection uses it; the market statistics and `market_resale_estimate` are unchanged.
+the candidate selection uses it, and since 0.2.8 `market_resale_estimate` includes n × the extra
+group's resale estimate (same sale_factor logic), so the score's resale cap counts the extras too
+and `score_calc` names them when that cap applies ("inkl. 2 × DualShock 4 à 26 €"); the evaluation
+prompt says they are already in the estimate; the market statistics are unchanged.
 The candidate (and the stored listing, refreshed on every run) carries `market_extras`
-(`[{group, count, median}]`), which the evaluation sees as plain input; it is not shown on the page.
+(`[{group, count, median, resale}]`), which the evaluation sees as plain input; it is not shown on the page.
 A unit followed by "fehlt", "defekt", "Drift" etc. counts 0, a model number ("DualShock 4
 Controller") is no count, and "2 Controller (1 defekt)" counts 1.
 
@@ -292,6 +295,12 @@ what `select()` does with them before anything is evaluated:
 The classification only sees titles that some group's `match` regex hits (see Market groups). A
 part of a device without a group of its own ("Mainboard Lenovo ThinkPad L14 …" in a search
 without a ThinkPad group) is never classified, so `llm` does not catch it: use `skip` or `bundles`.
+
+With `skip` and `bundles`, a part noun (Gehäuse, Blende, Lüfter, Leiste, Platine, Board, Port, Buchse …,
+also in compounds such as "Leergehäuse" or "Laufwerksblende") before "Ersatzteil"/"spare part", or a
+title starting with "Ersatzteil", is a part even when the classification says device (since 0.2.8). A
+noun with a state word ("Ersatzteile Board defekt"), a device sold "als Ersatzteil", an
+"Ersatzteilspender" or a title naming a console stays a device.
 
 ```yaml
 searches:

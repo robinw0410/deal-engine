@@ -72,6 +72,24 @@ _AFTER_EN = (r"broken|cracked|dead|faulty|damaged|defective|weak|bad|replaced|sw
              r"problems?|flickering|lines|loose|water damage|short|error|fault|\d+\s*%")
 _BUNDLE_EN = r"\blot\b|\bbundle\b|\bbulk\b|\bseveral\b|\bmultiple\b|\bassorted\b|\bcollection\b|" + _QTY2
 _VETO_EN = r"(?<![\w-])consoles?(?![\w-])"
+# "spare part" + a part noun anywhere in the title: a part even if the classification says device
+# ("PS4 Pro Fan Cooler CUH-7016B spare part"); the device sold "as spare part" is removed before (part_state)
+_SPARE_NOUN_EN = (r"housing|shell|case|bezel|faceplate|cover|fans?|coolers?|heat ?sinks?|\w*boards?|ports?|"
+                  r"connectors?|sockets?|ribbons?|brackets?|frames?")
+_SPARE_STATE_EN = (_AFTER_EN + r"|ok|okay|good|fine|works|working|bent|dented|scratched|yellowed|noisy|"
+                   r"included|present")
+_SP_EN = r"(?:original\s+|genuine\s+|oem\s+)?(?:spare|replacement)\s+parts?(?!\w)"
+
+
+def _spare_rx(nouns, state, sp):
+    """Part noun BEFORE "Ersatzteil"/"spare part" ("Leergehäuse Original Ersatzteil", "Fan Cooler spare part"),
+    or the title starts with it ("Ersatzteil für PS4 Gehäuse"); a noun followed by a state word ("Board defekt",
+    "Rahmen verbogen", "Gehäuse ok") describes a device sold for parts and does not count."""
+    noun = r"(?<![\w-])(?:" + nouns + r")(?![\w-])(?!\W*(?:" + state + r")(?!\w))"
+    return noun + r".*?(?<![\w-])" + sp + r"|^\W*" + sp + r".*?" + noun
+
+
+_SPARE_EN = _spare_rx(_SPARE_NOUN_EN, _SPARE_STATE_EN, _SP_EN)
 
 _STRONG_DE = (_STRONG_EN + r"|mainboards?|platinen?|display[- ]?einheit(?:en)?|bildschirm[- ]?einheit(?:en)?|"
               r"(?:lcd|oled|display)[- ]?(?:panel|einheit|modul)\w*|scharnier\w*|ladebuchse\w*|flex ?kabel\w*|"
@@ -85,7 +103,7 @@ _START_DE = (_START_EN + r"|akkus?(?!\s+(?:staub\w*|sauger|schrauber|bohr\w*|ras
 _FOR_DE = _FOR_EN + r"|für|fuer|passend|passt|kompatibel|ersatz"
 _FLUFF_DE = _FLUFF_EN + r"|neu\w*|ersatz|gebraucht|\d+\s*(?:stk\.?|stück|stueck)|konvolut|sammlung|posten"
 _SOLD_DE = (_SOLD_EN + r"|(?:als|für|fuer|zum|zu)\s+(?:(?:ersatz)?teile?\w*|bastler\w*|ausschlachten)|"
-            r"(?:ersatz)?teile[- ]?spender|bastler\w*|"
+            r"(?:ersatz)?teile?[- ]?spender\w*|bastler\w*|"
             r"(?:disc|disk|blu-?ray)?[- ]?laufwerk[- ]?(?:edition|version|variante)|"
             r"(?:mit|inkl\.?|inklusive|samt)\s+(?:(?:disc|disk|blu-?ray)[- ]?)?laufwerk")
 _SPEC_DE = _SPEC_EN + r"|matt|spiegelnd|entspiegelt"
@@ -101,6 +119,14 @@ _AFTER_DE = (_AFTER_EN + r"|defekt\w*|kaputt\w*|gebrochen|gesprungen|zersprungen
 _BUNDLE_DE = (_BUNDLE_EN + r"|konvolut|sammlung|\bposten\b|\bpaket\b|teilepaket|ersatzteilpaket|\bmehrere\b|"
               r"\bdiverse\b")
 _VETO_DE = r"(?<![\w-])(?:konsole\w*|consoles?)(?![\w-])"
+_SPARE_NOUN_DE = (_SPARE_NOUN_EN + r"|\w*gehäuse\w*|\w*gehaeuse\w*|\w*blende\w*|\w*lüfter\w*|\w*luefter\w*|"
+                  r"\w*kühler\w*|\w*kuehler\w*|\w*leiste\w*|\w*platinen?|\w*buchse\w*|anschl(?:uss|üsse|uesse)\w*|"
+                  r"\w*abdeckung\w*|\w*deckel\w*|\w*rahmen\w*|\w*halterung\w*")
+_SPARE_STATE_DE = (_AFTER_DE + r"|ok|okay|i\.?\s?o\.?|gut|top|einwandfrei|funktioniert|verbogen|dellen?|vergilbt|"
+                   r"laut|kratzer\w*|vorhanden|dabei|fehlend|" + _SPARE_STATE_EN)
+_SP_DE = (r"(?:(?:original|orig\.?|neu\w*)\s+)?(?:ersatz-?teil(?!e?[- ]?spender)\w*|spare\s+parts?|"
+          r"replacement\s+parts?)(?!\w)")
+_SPARE_DE = _spare_rx(_SPARE_NOUN_DE, _SPARE_STATE_DE, _SP_DE)
 
 EN = {
     "number_words": {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
@@ -124,6 +150,7 @@ EN = {
     "part_state": _part_state_rx(_SOLD_EN, _SPEC_EN, _WITH_EN, _BEFORE_EN, _STRONG_EN + "|" + _WEAK_EN, _AFTER_EN),
     "part_bundle": _BUNDLE_EN,
     "part_veto": _VETO_EN,
+    "part_spare": _SPARE_EN,
     "negations": r"no|not|without|none|non|zero|nothing",
     # a negation does not reach past these words ("not tested but fake photos")
     "conjunctions": r"but|however|although|yet",
@@ -159,6 +186,7 @@ EN = {
         "score.travel": "travel", "score.shipping": "shipping",
         "score.how_shipping": "shipping", "score.how_pickup": "pickup {km} km",
         "score.bundle": " (bundle x{n})", "score.capped_market": " (capped at market estimate)",
+        "score.extras": " (incl. {items})", "score.extra_item": "{n} × {group} at {eur}",
         "score.bonus": " · profit bonus +{n}", "score.stock": " · parts in stock +{n}",
         "score.no_numbers": "evaluator score (numbers for the formula are missing)",
         "note.damage": "{n} visible damages -{pen}",
@@ -258,6 +286,7 @@ DE = {
     "part_state": _part_state_rx(_SOLD_DE, _SPEC_DE, _WITH_DE, _BEFORE_DE, _STRONG_DE + "|" + _WEAK_DE, _AFTER_DE),
     "part_bundle": _BUNDLE_DE,
     "part_veto": _VETO_DE,
+    "part_spare": _SPARE_DE,
     "conjunctions": r"aber|jedoch|doch|sondern|but|however",
     "no_damage": r"(keine?|keinerlei|nichts|ohne|none|no|nothing)\b",
     "reserved_title": r"\b(reserviert|verkauft|angezahlt|reserved|sold)\b",
@@ -289,6 +318,7 @@ DE = {
         "score.travel": "Fahrt", "score.shipping": "Versand",
         "score.how_shipping": "Versand", "score.how_pickup": "Abholung {km} km",
         "score.bundle": " (Paket x{n})", "score.capped_market": " (gedeckelt auf Marktschätzung)",
+        "score.extras": " (inkl. {items})", "score.extra_item": "{n} × {group} à {eur}",
         "score.bonus": " · Gewinn-Bonus +{n}", "score.stock": " · Teile auf Lager +{n}",
         "score.no_numbers": "Score der Bewertung (Zahlen für die Formel fehlen)",
         "note.damage": "{n} sichtbare Schäden −{pen}",
@@ -398,6 +428,7 @@ class Locale:
         self.part_state = re.compile(d["part_state"], re.I)
         self.part_bundle = d["part_bundle"]
         self.part_veto = re.compile(d["part_veto"], re.I)
+        self.part_spare = re.compile(d["part_spare"], re.I)
         self.market_exclude = d["market_exclude"]
         self.negations = d["negations"]
         self.conjunctions = d["conjunctions"]

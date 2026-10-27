@@ -16,7 +16,9 @@ use only the criteria, device groups, tiers, evaluation rules and the fields.
    `market_median` (if present) is the median asking price of working units of this group,
    computed by the script (`market_n` = number of listings). These are ASKING prices, not sale
    prices. Use `market_resale_estimate` as the base for the resale price and adjust it only for
-   condition, storage or accessories. Without market data: estimate the resale price
+   condition, storage or accessories. If `market_extras` is present, the listed extras (n ×
+   `resale`, e.g. extra controllers) are already included in `market_resale_estimate`: do not add
+   them again. Without market data: estimate the resale price
    conservatively (lower third of the offers) and note "resale price estimated" in `issues`.
    `distance_km` is the estimated road distance from home, `shipping_possible` whether the
    platform offers shipping with buyer protection, `shipping_cost_eur` the shipping cost if the

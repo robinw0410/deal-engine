@@ -97,6 +97,21 @@ def resale_from_ask(m, sale_factor):
     return round(min(m.get("p25") or m["median"], m["median"] * float(sale_factor)))
 
 
+def extras_resale(parts, market, sale_factor):
+    """Resale value of the extras a device listing includes (groups.extras_value parts: [(group, n)]):
+    n x the realistic resale price of that group, same sale_factor logic as the device (resale_from_ask).
+    Returns (eur, [{"group", "count", "median", "resale"}]) for market_extras."""
+    total, rows = 0, []
+    for name, n in parts:
+        m = market.get(name)
+        if not m or not m.get("median"):
+            continue
+        unit = resale_from_ask(m, sale_factor)
+        total += n * unit
+        rows.append({"group": name, "count": n, "median": m["median"], "resale": unit})
+    return total, rows
+
+
 def sold_estimate(sold_prices, ask, min_sold=8, sold_factor=0.93):
     """Resale estimate from disappeared listings; only if enough data, and never above `ask`."""
     if len(sold_prices) < min_sold:

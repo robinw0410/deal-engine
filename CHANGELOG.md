@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.2.8 – 2026-10-27
+
+### Fixed
+
+- **Score of device bundles with extras.** `market_extras` only raised the candidate threshold; the
+  resale estimate (and with it the score's 105 % resale cap) still counted the device alone, so
+  "PS4 Slim + 2 Controller + 6 Spiele" fell to score 1 ("below minimum profit").
+  `market_resale_estimate` now adds n × the extra group's resale estimate (`market.extras_resale`,
+  same sale_factor logic as the device; games still 0), at the selection and in the insights after
+  the sold-price and bundle steps; `market_extras` rows carry `resale`.
+- **Spare parts with "Ersatzteil".** Titles like "PS2 Leergehäuse Original Ersatzteil", "Lüfter Kühler
+  Fan … Ersatzteil", "Laufwerksblende … Ersatzteil" or "Controller Port Anschlussleiste Ersatzteil"
+  passed `parts: skip` (compound nouns, or the classification said device). A part noun before
+  "Ersatzteil"/"spare part", or a title starting with it (locale `part_spare`,
+  `groups.is_spare_part`), is now a part, also against a device classification. A noun followed by a
+  state word ("Ersatzteile Board defekt", "Ersatzteil Rahmen verbogen"), devices sold "als
+  Ersatzteil", "Ersatzteilspender" and console titles stay devices.
+- `score_calc` names the extras ("inkl. 2 × DualShock 4 à 26 €") when the resale cap applies, i.e.
+  when the price comes from the market estimate; the evaluation prompt says the extras are already in
+  `market_resale_estimate`.
+
 ## 0.2.7 – 2026-10-27
 
 ### Added

@@ -14,7 +14,7 @@ from datetime import date, timedelta
 from . import clock, history
 from . import locale as locale_mod
 from .groups import bundle_qty, extras_value, from_classification, is_accessory, match_group
-from .market import resale_from_ask, settings as market_settings, sold_estimate
+from .market import extras_resale, resale_from_ask, settings as market_settings, sold_estimate
 from .score import negotiation_head, opening_discount
 from .util import load_json, median, save_json
 
@@ -115,7 +115,7 @@ def apply(cfg, sc, paths, log=print):
             n_relist += 1
 
         # 3a. market group and asking-price estimate, fresh on every run
-        qty = 1
+        qty, extras_eur = 1, 0
         if groups:
             grp = match_group(l.get("title") or "", groups)
             if grp and is_accessory(l.get("title"), mc.get("accessory_regex"), loc):
@@ -131,8 +131,9 @@ def apply(cfg, sc, paths, log=print):
                 l["market_resale_estimate_ask"] = resale_from_ask(m, ms["sale_factor"])
                 l["market_resale_estimate"] = l["market_resale_estimate_ask"]
                 _, parts = extras_value(l.get("title"), grp, market, loc)   # fresh medians, as at the selection
-                if parts:
-                    l["market_extras"] = [{"group": n, "count": c, "median": market[n]["median"]} for n, c in parts]
+                extras_eur, rows = extras_resale(parts, market, ms["sale_factor"])
+                if rows:
+                    l["market_extras"] = rows
                 else:
                     l.pop("market_extras", None)
             else:
@@ -157,6 +158,10 @@ def apply(cfg, sc, paths, log=print):
         if qty > 1 and isinstance(l.get("market_resale_estimate"), (int, float)):
             l["bundle_qty"] = qty
             l["market_resale_estimate"] = round(l["market_resale_estimate"] * qty * c["bundle_discount"])
+
+        # 3d. extras that come with the device ("PS4 + 2 Controller"): + n x their resale estimate
+        if extras_eur and isinstance(l.get("market_resale_estimate"), (int, float)):
+            l["market_resale_estimate"] = round(l["market_resale_estimate"] + extras_eur)
 
         # negotiation hint without score formula (with formula score.py writes a better one)
         if not formula and isinstance(l.get("price"), (int, float)):

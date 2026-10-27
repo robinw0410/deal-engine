@@ -58,7 +58,8 @@ def test_threshold_adds_controllers():
     # flip ratio 0.7: (200 + 2 x 40) x 0.7 = 196; without extras 200 x 0.7 = 140
     c = select("Konsole + 2 Controller + 6 Spiele", 190, signal="defekt")
     assert c is not None and c["market_group"] == "Console"
-    assert c["market_extras"] == [{"group": "Pad", "count": 2, "median": 40}]
+    assert c["market_extras"] == [{"group": "Pad", "count": 2, "median": 40, "resale": 34}]
+    assert c["market_resale_estimate"] == 170 + 2 * 34   # min(p25 or median, median x 0.85) each
     assert select("Konsole + 2 Controller + 6 Spiele", 200, signal="defekt") is None
 
 
