@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.2.4 – 2026-10-27
+
+### Added
+
+- **Bounded backlog of postponed candidates** (`backlog: {max: N, max_age_days: D}` per search,
+  overridable per adapter; `{}` switches it off). Candidates postponed beyond the per-run limit or
+  by a category quota were re-considered on every run and the count grew with the search pool.
+  Postponed candidates beyond the newest `max` or published more than `max_age_days` ago are now
+  discarded: written to `seen` with `"skipped": "backlog"`, they come back only after the seen
+  retention or with a price drop of 10 %. A quota's rest is bounded by `category_caps[].backlog`
+  (default 3 × its `max_new_per_run` when a backlog is set). Logged as "… postponed, … discarded:
+  backlog"; `AdapterResult.discarded`. Without `backlog` nothing changes.
+- **Spare parts without the device** (`parts: llm|skip|bundles|accept`, default `llm`). The
+  classification has a kind `part`; `llm` drops what the model calls a part (part lots stay, as in
+  0.2.3), `skip` adds a word rule (`groups.is_part`, locale `part`/`part_state`/`part_bundle`,
+  overridable with `market.part_regex`) for titles like "Mainboard ThinkPad …" or "Display für
+  iPhone 12", `bundles` keeps part lots, `accept` evaluates parts. The word rule prefers precision:
+  devices with a broken or listed part ("ThinkPad T480 Display defekt", "… FHD Display", "PS5
+  Laufwerk Edition", "MacBook Pro defektes Logicboard") and anything with console/Konsole stay.
+
+### Fixed
+
+- `reconcile()` only applies hard limits (max_price, field filters, title regexes), never a market
+  threshold or bundle quantity; covered by tests. The title rule judges the current platform title
+  when the listing is in the search results (the stored title may come from the evaluation).
+- `reconcile()`: links of another platform (by host, ignoring www./m. and the TLD) protect a listing
+  from removal as before; links of the same platform (a merged relist, ebay.at next to ebay.de) do
+  not. When a listing is gone, all links of its platform are removed, and a listing without any
+  remaining source or foreign link counts as gone.
+
 ## 0.2.3 – 2026-10-27
 
 ### Fixed

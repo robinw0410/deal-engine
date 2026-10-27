@@ -22,7 +22,7 @@ from . import clock, history, llm
 from .groups import classified_market_group, from_classification, match_group, matches_any
 from .util import load_json
 
-KINDS = {"device", "bundle", "accessory", "other"}
+KINDS = {"device", "bundle", "accessory", "part", "other"}
 TITLE_LEN = history.TITLE_LEN   # titles are stored like in the listing table
 
 

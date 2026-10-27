@@ -23,7 +23,7 @@ from . import config as config_mod
 from . import locale as locale_mod
 from .config import ConfigError
 from .filters import fields_failed, has_signal, passes, title_failed
-from .groups import bundle_qty, from_classification, is_accessory, is_bundle_group, match_group
+from .groups import bundle_qty, drop_part, from_classification, is_accessory, is_bundle_group, match_group
 from .listing import EXTRA_NAME, RESERVED, normalize, shipping_unknown
 from .market import due as market_due, refresh as market_refresh, resale_from_ask, settings as market_settings
 from .util import load_json, num, save_json
@@ -130,6 +130,20 @@ def update_market(cfg, sc, adapter, P, log=print):
     return new
 
 
+def _platform(url):
+    """Platform of a link: the host's name without www./m. and top-level domain, so ebay.at, ebay.de
+    and m.ebay.co.uk are all "ebay". None for something that is no http(s) link."""
+    m = re.match(r"https?://([^/:?#]+)", str(url or ""), re.I)
+    if not m:
+        return None
+    parts = [p for p in m.group(1).lower().split(".") if p]
+    while len(parts) > 2 and parts[0] in ("www", "m"):
+        parts = parts[1:]
+    if len(parts) >= 3 and parts[-2] in ("co", "com", "org", "net", "ac", "gv"):
+        parts = parts[:-1]   # ebay.co.uk, example.com.au
+    return parts[-2] if len(parts) >= 2 else (parts[0] if parts else None)
+
+
 def reconcile(state, items, adapter, sc, changes, log=print, loc=None):
     """Compare the stored listings of this adapter with the current results."""
     loc = loc or locale_mod.get(sc.get("_locale"))
@@ -142,18 +156,35 @@ def reconcile(state, items, adapter, sc, changes, log=print, loc=None):
         if not sid:
             keep.append(l)
             continue
-        # hard limits (e.g. after a rule change)
+        # also on another platform: another adapter (sources) or a link of another platform the engine
+        # has no adapter for (only in urls, e.g. added by hand or by an external tool); the hard limits
+        # of this search then never remove the listing, and "gone" here only drops this platform's
+        # links. Links of the SAME platform (an older relisted ad, ebay.at next to ebay.de) do not count.
+        by_src = l.get("_urls_by_source") or {}
+        urls = l.get("urls") or []
+        own_url = by_src.get(adapter.name) or next((u for u in urls if str(sid) in str(u)), None)
+        own_pf = _platform(own_url)
+        if own_pf:
+            foreign = [u for u in urls if _platform(u) != own_pf]
+        else:   # own link unknown: only several platforms among the links say "another platform"
+            foreign = list(urls) if len({_platform(u) for u in urls}) > 1 else []
+        shared = len(sources) > 1 or bool(foreign)
+        # hard limits (e.g. after a rule change). Only these: never a market price threshold, bundle
+        # quantity or ratio; those decide about new candidates in select(), not about the state.
         p = num(l.get("price"))
         too_expensive = flt.get("max_price") is not None and p is not None and p > flt["max_price"]
-        if (too_expensive or fields_failed(l, flt)) and len(sources) == 1:
+        if (too_expensive or fields_failed(l, flt)) and not shared:
             changes["rule"].append(l)
             continue
+        it = items.get(sid)
         # title regexes: a listing that got into the state under an older, looser regex must not stay
-        # there; without a stored title there is nothing to judge, so it stays (mass guard below)
-        if l.get("title") and len(sources) == 1 and title_failed(l["title"], flt):
+        # there. Judged on the platform's current title if the listing is in the results (the stored
+        # title may have been rewritten by an evaluator), otherwise on the stored one; without any
+        # title there is nothing to judge, so it stays (mass guard below)
+        judged = (it or {}).get("title") or l.get("title")
+        if judged and not shared and title_failed(judged, flt):
             title_rule.append(l)
             continue
-        it = items.get(sid)
         newp = None
         if it is not None:
             st, newp = it["status"], it.get("price")
@@ -165,10 +196,17 @@ def reconcile(state, items, adapter, sc, changes, log=print, loc=None):
             except Exception:
                 st = "unknown"
         if st == "gone":
-            others = {k: v for k, v in sources.items() if k != adapter.name}
-            if others:
-                l["sources"] = others
-                l["urls"] = [u for u in l.get("urls", []) if u != l.get("_urls_by_source", {}).get(adapter.name)]
+            if shared:
+                # drop all links of this platform except those of another source; without another
+                # source and without a link of another platform left, the listing is gone as a whole
+                other = {k: v for k, v in sources.items() if k != adapter.name}
+                other_urls = {by_src.get(k) for k in other}
+                rest = [u for u in urls
+                        if u in other_urls or (u != own_url and (not own_pf or _platform(u) != own_pf))]
+                if not other and not any(u not in other_urls for u in rest):
+                    changes["gone"].append(l)
+                    continue
+                l["sources"], l["urls"] = other, rest
                 l.setdefault("_urls_by_source", {}).pop(adapter.name, None)
                 keep.append(l)
             else:
@@ -229,6 +267,36 @@ def max_new(sc, adapter_name=None):
     return int(own if own is not None else sc.get("max_new_per_run", 50))
 
 
+def backlog_settings(sc, adapter_name=None):
+    """backlog of the adapter (sc[adapter].backlog, replaces the search's as a whole), otherwise of
+    the search. None: not configured or without any limit (e.g. {} on an adapter to switch the search's
+    backlog off), postponed candidates are kept without limit (old behaviour)."""
+    own = (sc.get(adapter_name) or {}).get("backlog") if adapter_name else None
+    b = own if own is not None else sc.get("backlog")
+    if b is None or (b.get("max") is None and b.get("max_age_days") is None):
+        return None
+    return {"max": b.get("max"), "max_age_days": b.get("max_age_days")}
+
+
+def bound_backlog(postponed, backlog):
+    """Split postponed candidates (newest first) into (kept, discarded) by backlog.max_age_days
+    (published longer ago; without a publication date the age is unknown and the listing stays)
+    and backlog.max (only the newest; listings without a publication date count as the newest)."""
+    if not backlog:
+        return list(postponed), []
+    kept, dropped = list(postponed), []
+    if backlog.get("max_age_days") is not None:
+        cut = str(clock.today() - timedelta(days=int(backlog["max_age_days"])))
+        old = [it for it in kept if it.get("_published") and it["_published"] < cut]
+        kept = [it for it in kept if not (it.get("_published") and it["_published"] < cut)]
+        dropped += old
+    if backlog.get("max") is not None:
+        n = int(backlog["max"])
+        kept = [it for it in kept if not it.get("_published")] + [it for it in kept if it.get("_published")]
+        kept, dropped = kept[:n], dropped + kept[n:]
+    return kept, dropped
+
+
 def considered(sid, it, known, seen, flt):
     """The listing is looked at by select() at all: active, passes the filters, not in the state, and
     not seen before (or seen, but 10 % cheaper now)."""
@@ -239,20 +307,26 @@ def considered(sid, it, known, seen, flt):
 
 
 def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPPING_COST, adapter_name=None,
-           state_listings=(), loc=None, classified=None):
+           state_listings=(), loc=None, classified=None, discarded=None):
     """New candidates: pass the filters, are not known, are cheap enough relative to the market.
     Unknown shipping costs count as unknown_cost, never as 0. Returns (candidates, postponed).
+
+    discarded: a list; postponed candidates beyond the backlog (sc.backlog / sc[adapter].backlog,
+    category_caps[].backlog) are appended to it. Without a configured backlog nothing is discarded.
 
     classified: {source_id: (group name, qty, kind)} from the LLM classification; if plausible
     (groups.from_classification: a named group's match regex hits the title) it replaces the word
     rules for that listing: device/bundle -> that group (qty for controller-like groups),
-    accessory -> skipped, other -> no group (no market comparison). Implausible: word rules."""
+    accessory -> skipped, other -> no group (no market comparison). Implausible: word rules.
+    Spare parts without the device are dropped according to sc["parts"] (groups.drop_part: kind
+    "part", and with parts skip/bundles the word rule market.part_regex / the locale's part rule)."""
     loc = loc or locale_mod.get(sc.get("_locale"))
     flt = sc.get("filters") or {}
     mc = sc.get("market") or {}
     s = market_settings(mc)
     groups = mc.get("groups") or []
     classified = classified or {}
+    parts, part_rx, n_part = sc.get("parts", "llm"), mc.get("part_regex"), 0
     cands, too_expensive, no_signal, n_cls = [], 0, 0, 0
     for sid, it in items.items():
         if not considered(sid, it, known, seen, flt):
@@ -264,8 +338,14 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
             if kind == "accessory":
                 n_cls += 1
                 continue
+            if drop_part(it["title"], parts, kind, part_rx, loc):
+                n_part += 1
+                continue
             qty = cq if is_bundle_group(g) else 1
         else:
+            if drop_part(it["title"], parts, None, part_rx, loc):
+                n_part += 1   # "Mainboard <laptop>": no deal on the device
+                continue
             g = match_group(it["title"], groups) if groups else None
             if g and is_accessory(it["title"], mc.get("accessory_regex"), loc):
                 continue   # "case for <device>" is not a deal on the device
@@ -288,6 +368,8 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
         cands.append(it)
     if n_cls:
         log(f"{n_cls} listings skipped as accessories (LLM classification)")
+    if n_part:
+        log(f"{n_part} listings skipped as spare parts without the device (parts: {parts})")
     if no_signal:
         log(f"{no_signal} listings without defect signal and without market price skipped")
     if too_expensive:
@@ -296,7 +378,11 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
 
     # quotas (e.g. phones): at most max_new_per_run per run, and with max_share at most this share
     # of the state (counting the new ones)
-    n_state, capped = len(state_listings), 0
+    # The rest of a quota is bounded by cap.backlog (newest first; default with a configured backlog:
+    # 3 x the cap's max_new_per_run), all postponed ones together by backlog (max, max_age_days).
+    # What falls out goes to `discarded` (collect() writes it to seen).
+    bl = backlog_settings(sc, adapter_name)
+    n_state, held, gone = len(state_listings), [], []
     for cap in sc.get("category_caps") or []:
         rx = cap["regex"]
         allowed = int(cap.get("max_new_per_run", 5))
@@ -305,19 +391,33 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
             # (exact shares would block everything while the state is still small)
             in_state = sum(1 for l in state_listings if re.search(rx, str(l.get("title") or ""), re.I))
             allowed = min(allowed, max(0, int(float(cap["max_share"]) * (n_state + allowed)) - in_state))
-        kept, n_cap = [], 0
+        kept, rest, n_cap = [], [], 0
         for it in cands:
             if re.search(rx, it["title"], re.I):
                 if n_cap >= allowed:
+                    rest.append(it)
                     continue
                 n_cap += 1
             kept.append(it)
-        if len(kept) < len(cands):
-            log(f"quota '{cap.get('name', rx)}': {len(cands) - len(kept)} candidates postponed")
-            capped += len(cands) - len(kept)
+        if rest:
+            cap_bl = cap.get("backlog")
+            if cap_bl is None and bl is not None:
+                cap_bl = 3 * int(cap.get("max_new_per_run", 5))
+            n_gone = 0
+            if cap_bl is not None:
+                n_gone = max(0, len(rest) - int(cap_bl))
+                gone += rest[int(cap_bl):]
+                rest = rest[:int(cap_bl)]
+            log(f"quota '{cap.get('name', rx)}': {len(rest)} candidates postponed"
+                + (f", {n_gone} discarded (backlog)" if n_gone else ""))
+            held += rest
         cands = kept
     limit = max_new(sc, adapter_name)
-    return cands[:limit], max(0, len(cands) - limit) + capped
+    postponed = sorted(held + cands[limit:], key=lambda x: (x.get("_published") or "", x["source_id"]), reverse=True)
+    postponed, dropped = bound_backlog(postponed, bl)
+    if discarded is not None:
+        discarded += gone + dropped
+    return cands[:limit], len(postponed)
 
 
 def _fetch(url):
@@ -354,7 +454,8 @@ def download_images(urls, folder, prefix, root, adapter=None):
 
 
 def collect(cfg, sc, adapter, log=print, classify_first=False, classify_budget=None):
-    """Returns {"found", "candidates", "rejected", "postponed", "batches", "requests", "blocked", "problems"}.
+    """Returns {"found", "candidates", "rejected", "postponed", "discarded", "batches", "requests", "blocked",
+    "problems"}. discarded: postponed candidates beyond the backlog, written to seen right away.
 
     classify_first: classify the titles of the listings select() will look at with the LLM before
     selecting (core/classify.py, needs classify enabled in the search); run_search sets it with the
@@ -369,7 +470,7 @@ def collect(cfg, sc, adapter, log=print, classify_first=False, classify_budget=N
     state = load_json(P["state"], {"listings": []})
     changes = {"price": [], "gone": [], "rule": [], "reserved": [], "problems": []}
     mc = sc.get("market") or {}
-    ready, skipped, rejected, found, blocked = [], 0, 0, 0, None
+    ready, skipped, rejected, found, blocked, discarded = [], 0, 0, 0, None, []
     try:
         market = update_market(cfg, sc, adapter, P, log)
         # flips: extra queries for working units clearly below the market median
@@ -405,8 +506,17 @@ def collect(cfg, sc, adapter, log=print, classify_first=False, classify_budget=N
                 by_uid = {}
             classified = {it["source_id"]: by_uid[history.uid(it)] for it in items.values() if history.uid(it) in by_uid}
         cands, skipped = select(items, known, seen, market, sc, log, unknown_cost, adapter.name,
-                                state["listings"], loc, classified=classified)
-        log(f"{len(cands)} new candidates for evaluation" + (f" ({skipped} postponed to the next run)" if skipped else ""))
+                                state["listings"], loc, classified=classified, discarded=discarded)
+        if discarded:
+            # never evaluated, but marked as seen so they don't come back every run (unless the
+            # price drops by 10 %, see considered()); saved now, merge() may not run or see them
+            today = clock.today_str()
+            for it in discarded:
+                seen[it["source_id"]] = {"price": it.get("price"), "date": today, "skipped": "backlog"}
+            save_json(P["seen"], seen)
+        notes = ([f"{skipped} postponed to the next run"] if skipped else []) + \
+                ([f"{len(discarded)} discarded: backlog"] if discarded else [])
+        log(f"{len(cands)} new candidates for evaluation" + (f" ({', '.join(notes)})" if notes else ""))
 
         n_img = int(sc.get("images", 1))
         for it in cands:
@@ -464,7 +574,7 @@ def collect(cfg, sc, adapter, log=print, classify_first=False, classify_budget=N
                                       "batches": len(batches)})
     log(f"{len(batches)} batch(es) for evaluation, {adapter.requests} requests in total")
     return {"found": found, "candidates": len(ready), "rejected": rejected, "postponed": skipped,
-            "batches": len(batches), "requests": adapter.requests, "blocked": blocked,
+            "discarded": len(discarded), "batches": len(batches), "requests": adapter.requests, "blocked": blocked,
             "problems": list(changes["problems"])}
 
 

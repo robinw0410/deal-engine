@@ -53,7 +53,7 @@ there `deal_engine` is importable without installing it.
 **As a package**, from a release tag:
 
 ```sh
-pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.3"
+pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.4"
 ```
 
 This installs the `deal_engine` package including the built-in prompts and the deal list page.
@@ -251,13 +251,59 @@ for this check, so the model may place "DualSense for PS5 console" in DualSense,
 "DualSense" in PS5, nor a title in a group whose veto rules it out). Then it replaces
 the word rules for that listing — in the candidate selection, in tracking (`listing.grp`) and in
 the insights: `device`/`bundle` → that group (and quantity for controller-like groups),
-`accessory` → skipped / no group, `other` → no group, no market comparison. Tracking keeps this
+`accessory` → skipped / no group, `part` → see [Spare parts](#spare-parts), `other` → no group, no
+market comparison. Tracking keeps this
 decision on later runs (the word-rule group does not come back). An implausible result, no
 result, or an unavailable model (logged, the run goes on) leaves the word rules in effect. With a
 callable evaluator (demo, tests) no model is called.
 
 Group regexes (`match`, `exclude`, `veto`) are checked when a search is loaded; an invalid one is
 a configuration error.
+
+### Spare parts
+
+Listings that sell a spare part without the device ("Mainboard Lenovo ThinkPad L14 …", "Battery
+for MacBook Air A1466") pass the defect signal of a repair search easily (eBay's "for parts or not
+working" condition counts as one) and have no market price to stop them. `parts` per search decides
+what `select()` does with them before anything is evaluated:
+
+| `parts` | dropped before the evaluation |
+|---|---|
+| `llm` (default) | single parts the LLM classification calls `part`; part lots stay (as in 0.2.3, when single parts were `accessory`) |
+| `skip` | classification `part`, and titles the word rule calls a part (unless classified as `device`/`bundle`) |
+| `bundles` | like `skip`, but part lots are kept ("Konvolut Mainboards", "Ersatzteilpaket", "lot of 5 screens") |
+| `accept` | nothing; a `part` is evaluated like a listing without group. Unlike 0.2.3, single parts the classification calls `part` are evaluated too (0.2.3 skipped them as `accessory`) |
+
+The classification only sees titles that some group's `match` regex hits (see Market groups). A
+part of a device without a group of its own ("Mainboard Lenovo ThinkPad L14 …" in a search
+without a ThinkPad group) is never classified, so `llm` does not catch it: use `skip` or `bundles`.
+
+```yaml
+searches:
+  repairs:
+    parts: skip                 # or bundles, if part lots are wanted
+    market:
+      part_regex: "mainboard|motherboard|logic ?board"   # optional, replaces the locale's part rule
+```
+
+The word rule (`groups.is_part`, locale `part`, `part_state`, `part_bundle`, `part_veto`) prefers
+precision over recall: a device taken for a part is lost, a part taken for a device only costs an
+evaluation. A title that names a console is never a part. Otherwise it first removes phrases about
+a part of a device that is sold: "for parts or repair", "als Ersatzteilspender"; spec phrases
+("FHD Display", "13,3 Zoll Touchscreen", "Retina Display", "Laufwerk Edition", "disc drive
+edition"); states before a part in the middle of a title ("defektes Logicboard") or after one
+("display broken", "Mainboard Wasserschaden", "battery 85 %"); with-clauses with a part ("mit
+neuem Gehäuse", "with IPS display"). Then a title is a part if a strong part word stands anywhere
+(mainboard, motherboard, logic board, display assembly, LCD panel, hinge, charging port …), the
+title starts with a part word (display, battery, housing, Laufwerk …; "battery powered", "Akku
+Staubsauger" excluded), a part word is followed by a for-word ("keyboard for ThinkPad", "Display
+Ersatz"), or "replacement"/"Ersatz" stands before one. A title that only ends with a part word
+("PS5 Lüfter", "MacBook Pro A1708 Display") is left to the evaluation. Part lots need a lot word or
+a quantity of at least 2 ("3 Stück", "5x"); model numbers like "X230" do not count.
+`market.part_regex` replaces only the final regex; the console veto and the removal of phrases
+stay. `parts` must be one of the four values and `part_regex` a valid
+regex, otherwise loading the search fails. Spare parts are not taken out of the market statistics
+by this setting (the locale's `market_exclude` and the group `min`/`max` do that).
 
 ## Extending deal-engine
 
@@ -393,6 +439,40 @@ At most `max_new_per_run` new candidates per run whose title matches `regex`, an
 new ones. This is an approximation that keeps a small state from being blocked; the real share can end
 up somewhat higher. The rest is postponed.
 
+### Backlog of postponed candidates
+
+Candidates over `max_new_per_run` (or over a quota) are not stored anywhere: every run selects again
+from the current search hits minus the listings evaluated before (`seen`, kept 60 days), newest first.
+With a large search pool the postponed count only grows, and old hits come back every run.
+`backlog` bounds this:
+
+```yaml
+searches:
+  electronics:
+    backlog: {max: 200, max_age_days: 14}   # for all adapters of the search
+    category_caps:
+      - {name: phones, regex: "iphone|galaxy|pixel", max_new_per_run: 5, backlog: 10}
+    ebay:
+      backlog: {max: 100, max_age_days: 7}  # replaces the search's backlog for this adapter
+```
+
+- `max`: keep only the newest N postponed candidates (over-limit rest and quota rest together);
+  listings without a publication date count as the newest.
+- `max_age_days`: drop postponed candidates published more than D days ago (listings without a
+  publication date are never dropped for their age).
+- `category_caps[].backlog`: keep at most this many of a quota's rest (newest first); with a
+  `backlog` configured for the search/adapter the default is 3 × the cap's `max_new_per_run`.
+
+Both keys are optional (missing or `null`: no limit); `backlog: {}` on an adapter switches the
+search's backlog off for it, including the default bound of the quota rest (an explicit
+`category_caps[].backlog` still applies). Discarded candidates are written to `seen` with the date and
+`"skipped": "backlog"`, so they are not looked at again for the 60 days `seen` is kept, unless
+their price drops by 10 % or more (a listing discarded without a price has nothing to compare
+with and stays out for the whole 60 days). The log shows them separately
+(`25 new candidates for evaluation (200 postponed to the next run, 1950 discarded: backlog)`), and
+`collect()`/`AdapterResult` count them as `discarded`. Without `backlog` (the default) nothing is
+discarded, as before.
+
 ### Locale
 
 `locale: de` globally or per search (default `en`). A locale covers bundle quantities
@@ -488,7 +568,7 @@ follows the final score. A hook that raises is logged and skipped.
 `run_search()` (`deal_engine/core/run.py`) returns a `RunResult` with one `AdapterResult` per
 adapter: `status` `ok`, `partial` (blocked, an evaluation batch failed, other problems) or
 `failed` (`reason` `config_error` or `error`), plus `error` and counts (`found`, `candidates`,
-`rejected`, `postponed`, `added`, `merged`, `price_changes`, `gone`, `requests`, `problems`).
+`rejected`, `postponed`, `discarded`, `added`, `merged`, `price_changes`, `gone`, `requests`, `problems`).
 `bool(result)` is true only if every adapter is `ok`. `python -m deal_engine run --json PATH`
 writes these results as JSON.
 

@@ -32,6 +32,7 @@ class AdapterResult:
     candidates: int = 0
     rejected: int = 0
     postponed: int = 0
+    discarded: int = 0          # postponed candidates beyond the backlog (written to seen)
     added: int = 0
     merged: int = 0
     price_changes: int = 0
@@ -154,6 +155,7 @@ def run_search(cfg, name, evaluator="claude", render=True, log=print):
             c = pipeline.collect(cfg, sc, adapter, log, classify_first=classify_first, classify_budget=cls_budget)
             for k in ("found", "candidates", "rejected", "postponed", "requests"):
                 setattr(ar, k, c[k])
+            ar.discarded = c.get("discarded", 0)
             if c["batches"]:
                 if evaluator == "claude":
                     if sc.get("prefilter"):

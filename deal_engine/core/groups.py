@@ -10,7 +10,7 @@ wins. An excluded title falls through to the later groups. The optional "veto" (
 that: if "match" and "veto" both hit, the title gets no group at all ("PS5 headset" must not
 fall through to a broader group).
 
-Quantity words, "with/inkl." clauses and the default accessory words come from the locale
+Quantity words, "with/inkl." clauses, the default accessory words and the spare-part rule come from the locale
 (core/locale.py); every function takes an optional locale (default English).
 """
 import re
@@ -84,6 +84,43 @@ def is_accessory(title, accessory_regex=None, loc=None):
     return bool(re.search(accessory_regex or L.accessory, t, re.I))
 
 
+PARTS_MODES = ("llm", "skip", "bundles", "accept")
+
+
+def is_part(title, part_regex=None, loc=None):
+    """The listing is a spare part without the device ("Mainboard Lenovo ThinkPad L14", "Akku für
+    MacBook Pro"), not a device with a broken or new part ("ThinkPad T480 Display defekt",
+    "iPhone 12 neuer Akku", "ThinkPad T480 FHD Display"). Precision over recall: a title that names a
+    console is never a part; otherwise the locale's state/spec phrases and then the with-clauses are
+    removed, and part_regex (default: the locale's part rule, see core/locale.py) is searched."""
+    L = _loc(loc)
+    if L.part_veto.search(title or ""):
+        return False
+    t = L.with_clause.sub(" ", L.part_state.sub(" ", title or ""))
+    return bool(re.search(part_regex or L.part, t, re.I))
+
+
+def is_part_bundle(title, loc=None):
+    """The title offers several parts ("Konvolut Mainboards", "Ersatzteilpaket", "lot of 5 screens");
+    quantities count from 2 on, so model numbers ("X230") and "1x" are no bundles."""
+    return bool(re.search(_loc(loc).part_bundle, title or "", re.I))
+
+
+def drop_part(title, mode, kind=None, part_regex=None, loc=None):
+    """select() drops the listing as a spare part without the device (search setting `parts`).
+
+    kind: of a plausible LLM classification, None without one.
+      llm (default)  only listings the classification calls "part", part bundles are kept (as in
+                     0.2.3); the word rule is off
+      skip           kind "part", or no device/bundle classification and the word rule (is_part) hits
+      bundles        like skip, but part bundles (is_part_bundle) are kept
+      accept         never (a "part" is evaluated like a listing without group)"""
+    if mode == "accept":
+        return False
+    part = kind == "part" or (mode != "llm" and kind not in ("device", "bundle") and is_part(title, part_regex, loc))
+    return part and not (mode in ("llm", "bundles") and is_part_bundle(title, loc))
+
+
 def market_group(title, price, groups, defect=False, accessory_regex=None, loc=None):
     """Group for market statistics and tracking: no accessories, no bundles, price within the
     group's plausible range (defective units are allowed below the range)."""
@@ -102,7 +139,7 @@ def from_classification(title, cls, groups):
     match regex does not hit the title or whose veto does (exclude is ignored here: the model may
     overrule a fall-through, but never assign a group that does not fit or that the config rules out
     for this title); the word rules decide then.
-    Otherwise (kind, group dict or None, qty) with kind device/bundle/accessory/other
+    Otherwise (kind, group dict or None, qty) with kind device/bundle/accessory/part/other
     (device/bundle without a known group count as other)."""
     if not cls:
         return None
@@ -119,7 +156,7 @@ def from_classification(title, cls, groups):
         except (TypeError, ValueError):
             q = 1
         return kind, g, q
-    return (kind if kind in ("accessory", "other") else "other"), None, 1
+    return (kind if kind in ("accessory", "part", "other") else "other"), None, 1
 
 
 def classified_market_group(title, price, groups, cls, defect=False, accessory_regex=None, loc=None):

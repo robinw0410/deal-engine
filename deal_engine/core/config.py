@@ -9,6 +9,7 @@ deal-engine. "{data_dir}" expands to the data directory. $DEAL_ENGINE_DATA_DIR o
 (relative to the current working directory; the demo uses it to keep its data separate).
 """
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -29,6 +30,7 @@ SEARCH_DEFAULTS = {
     "prefilter": False,
     "classify": False,
     "wanted_ads": "reject",
+    "parts": "llm",
 }
 
 
@@ -100,7 +102,42 @@ def search(cfg, name):
         raise ConfigError(str(e))
     if sc["wanted_ads"] not in ("reject", "accept"):
         raise ConfigError(f"search '{name}': wanted_ads must be 'reject' or 'accept', not {sc['wanted_ads']!r}")
+    from .groups import PARTS_MODES
+    if sc["parts"] not in PARTS_MODES:
+        raise ConfigError(f"search '{name}': parts must be one of {', '.join(PARTS_MODES)}, not {sc['parts']!r}")
+    part_rx = (sc.get("market") or {}).get("part_regex")
+    if part_rx is not None:
+        try:
+            re.compile(str(part_rx), re.I)
+        except re.error as e:
+            raise ConfigError(f"searches.{name}.market.part_regex: invalid regex: {e}")
+    _check_backlog(sc.get("backlog"), f"searches.{name}.backlog")
+    for an in sc.get("adapters") or []:
+        if isinstance(sc.get(an), dict):
+            _check_backlog(sc[an].get("backlog"), f"searches.{name}.{an}.backlog")
+    for i, cap in enumerate(sc.get("category_caps") or []):
+        if isinstance(cap, dict) and cap.get("backlog") is not None and not _count(cap["backlog"]):
+            raise ConfigError(f"searches.{name}.category_caps[{i}].backlog must be an integer >= 0, "
+                              f"not {cap['backlog']!r}")
     return sc
+
+
+def _count(v):
+    return isinstance(v, int) and not isinstance(v, bool) and v >= 0
+
+
+def _check_backlog(b, where):
+    """backlog: {max: int >= 0, max_age_days: int >= 0}, both optional (missing/null: no limit)."""
+    if b is None:
+        return
+    if not isinstance(b, dict):
+        raise ConfigError(f"{where} must be a mapping like {{max: 200, max_age_days: 14}}, not {b!r}")
+    unknown = set(b) - {"max", "max_age_days"}
+    if unknown:
+        raise ConfigError(f"{where}: unknown key(s) {', '.join(sorted(map(str, unknown)))} (allowed: max, max_age_days)")
+    for k in ("max", "max_age_days"):
+        if b.get(k) is not None and not _count(b[k]):
+            raise ConfigError(f"{where}.{k} must be an integer >= 0, not {b[k]!r}")
 
 
 def prompt_path(cfg, sc, name):

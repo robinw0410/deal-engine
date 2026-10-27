@@ -3,7 +3,7 @@ overridable with searches.<name>.locale).
 
 A locale holds:
   - regexes for listing titles: bundle quantities ("3 controllers", "3 Stück"), accessory
-    clauses ("with charger", "inkl. Kabel"), default accessory and market-exclude words,
+    clauses ("with charger", "inkl. Kabel"), default accessory, spare-part and market-exclude words,
     negations for fraud indicators ("no prepayment", "keine Vorkasse")
   - stop words for title similarity (relist detection)
   - the texts deal-engine writes: report, score calculation, negotiation hint, message draft,
@@ -18,6 +18,90 @@ Unknown keys fall back to English.
 """
 import re
 
+# Spare parts without the device (groups.is_part, search setting `parts`). Precision over recall:
+# a device wrongly taken for a part is lost, a part taken for a device only costs an evaluation.
+# First removed from the title ("part_state"): phrases about a part of a device that is sold —
+#   "for parts", "als Ersatzteilspender"; spec phrases in the middle ("FHD Display", "13,3 Zoll
+#   Touchscreen", "Retina Display", "Laufwerk Edition", "mit Disc Laufwerk"); a state before a part
+#   word in the middle ("defektes Logicboard") or after one anywhere ("Display defekt", "Mainboard
+#   Wasserschaden", "Akku 85 %"); with-clauses with a part ("mit neuem Gehäuse", "with IPS display").
+# Then, unless the title names a console ("part_veto"), it is a part if
+#   - a strong part word stands anywhere                    ("... ThinkPad L14 Mainboard i5")
+#   - it starts with a part word (after "original", "new"…)  ("Akku für MacBook", "Display Lenovo T480")
+#   - a part word is followed by a for-word                  ("Tastatur DE für ThinkPad", "iPhone 12 Display Ersatz")
+#   - "replacement"/"Ersatz" stands right before a part word ("Ersatz-Akku", "replacement screen")
+_NB = r"(?![\w-])"
+
+
+def _part_rx(strong, start, follow, for_words, fluff):
+    return (r"(?<![\w-])(?:" + strong + r")"
+            + r"|^\W*(?:(?:" + fluff + r")\s+)*(?:" + start + r"|" + strong + r")" + _NB
+            + r"|(?<![\w-])(?:" + follow + r")" + _NB + r"\W+(?:[\w.-]+\s+){0,2}?(?:" + for_words + r")(?!\w)"
+            + r"|(?<![\w-])(?:ersatz|replacement)[- ]?(?:" + follow + r")" + _NB)
+
+
+def _part_state_rx(sold_for_parts, spec, with_words, before, parts, after):
+    mid = r"(?<=\S\s)"   # in the middle of a title: "Neuer Akku für MacBook" (at the start) is a part
+    return (r"(?<![\w-])(?:" + sold_for_parts + r")(?!\w)"
+            + r"|(?<![\w-])(?:" + with_words + r")\s+(?:(?:" + before + r"|" + spec + r"|[\w.-]+)\s+){0,2}?(?:"
+            + parts + r")" + _NB
+            + r"|" + mid + r"(?:(?:" + spec + r")\s+){1,3}(?:" + parts + r")" + _NB
+            + r"|" + mid + r"(?:" + before + r")\s+(?:[\w.-]+\s+)?(?:" + parts + r")" + _NB
+            + r"|(?<![\w-])(?:" + parts + r")" + _NB + r"\W*(?:[\w.-]+\s+)?(?:" + after + r")(?!\w)")
+
+
+_QTY2 = r"(?<![\w.,])(?:[2-9]|[1-9]\d{1,2})\s*(?:x|×|pcs\.?|pieces?|stk\.?|stück|stueck)(?!\w)"
+
+_STRONG_EN = (r"main ?boards?|mother ?boards?|logic ?boards?|system ?boards?|(?:display|screen|lcd) assembl(?:y|ies)|"
+              r"(?:lcd|oled) (?:panel|module)s?|digitizers?|hinges?|charging ports?|flex cables?|palm ?rests?|"
+              r"bottom (?:case|cover)s?")
+_WEAK_EN = (r"displays?|lcd|screens?|touch ?screens?|batter(?:y|ies)|housings?|keyboards?|fans?|coolers?|"
+            r"heat ?sinks?|cameras?|speakers?|(?:disc |optical |blu-?ray )?drives?")
+_START_EN = (r"display(?!\s*port)|lcd|screen|touch ?screen|batter(?:y|ies)(?!\s+(?:powered|operated|charger|pack))|"
+             r"housing|spare parts?|replacement parts?")
+_FOR_EN = r"for|fits|compatible|replacement"
+_FLUFF_EN = r"original|orig\.?|oem|genuine|new|brand|used|replacement|\d+\s*(?:x|pcs\.?)|lot|bundle|of"
+_SOLD_EN = (r"(?:for|as)\s+(?:spare\s+)?(?:parts|spares|repair)(?:\s+or\s+repairs?)?|spares\s+(?:or|and|/)\s+repairs?|"
+            r"parts\s+donor|(?:disc|disk|blu-?ray)\s+drive\s+(?:edition|version)|"
+            r"(?:with|incl\.?|including)\s+(?:(?:disc|disk|blu-?ray)\s+)?drive")
+_SPEC_EN = (r"fhd|full ?hd|uhd|qhd|wqhd|hd\+?|ips|retina|oled|amoled|lcd|led|4k|2k|touch|matte?|glossy|"
+            r"\d+(?:[.,]\d+)?\s*(?:\"|”|''|inch|in\b|zoll|hz)")
+_WITH_EN = r"with|incl\.?|including|without|and|\+|&"
+_BEFORE_EN = r"broken|cracked|dead|faulty|damaged|defective|new|weak|bad|replaced|swollen|loose"
+_AFTER_EN = (r"broken|cracked|dead|faulty|damaged|defective|weak|bad|replaced|swollen|missing|not|no|issues?|"
+             r"problems?|flickering|lines|loose|water damage|short|error|fault|\d+\s*%")
+_BUNDLE_EN = r"\blot\b|\bbundle\b|\bbulk\b|\bseveral\b|\bmultiple\b|\bassorted\b|\bcollection\b|" + _QTY2
+_VETO_EN = r"(?<![\w-])consoles?(?![\w-])"
+
+_STRONG_DE = (_STRONG_EN + r"|mainboards?|platinen?|display[- ]?einheit(?:en)?|bildschirm[- ]?einheit(?:en)?|"
+              r"(?:lcd|oled|display)[- ]?(?:panel|einheit|modul)\w*|scharnier\w*|ladebuchse\w*|flex ?kabel\w*|"
+              r"handauflage\w*|bodenplatte\w*|unterschale\w*|oberschale\w*|rückschale\w*|rueckschale\w*|"
+              r"(?:notebook|laptop)-?(?:tastatur|akku|display|lüfter|luefter)\w*")
+_WEAK_DE = (_WEAK_EN + r"|akkus?|batterien?|bildschirm|gehäuse|gehaeuse|tastatur(?:en)?|lüfter|luefter|kühler|kuehler|"
+            r"kameras?|lautsprecher|(?:disc[- ]?|disk[- ]?|blu-?ray[- ]?)?laufwerk\w*")
+_START_DE = (_START_EN + r"|akkus?(?!\s+(?:staub\w*|sauger|schrauber|bohr\w*|rasen\w*|mäher|maeher|säge|saege|lampe|"
+             r"leuchte|radio|lautsprecher|box|heckenschere|trimmer|gebläse|geblaese|laubbläser|werkzeug\w*|"
+             r"ladegerät))|batterie|gehäuse|gehaeuse|lüfter|luefter|kühler|kuehler|laufwerk|ersatzteil\w*")
+_FOR_DE = _FOR_EN + r"|für|fuer|passend|passt|kompatibel|ersatz"
+_FLUFF_DE = _FLUFF_EN + r"|neu\w*|ersatz|gebraucht|\d+\s*(?:stk\.?|stück|stueck)|konvolut|sammlung|posten"
+_SOLD_DE = (_SOLD_EN + r"|(?:als|für|fuer|zum|zu)\s+(?:(?:ersatz)?teile?\w*|bastler\w*|ausschlachten)|"
+            r"(?:ersatz)?teile[- ]?spender|bastler\w*|"
+            r"(?:disc|disk|blu-?ray)?[- ]?laufwerk[- ]?(?:edition|version|variante)|"
+            r"(?:mit|inkl\.?|inklusive|samt)\s+(?:(?:disc|disk|blu-?ray)[- ]?)?laufwerk")
+_SPEC_DE = _SPEC_EN + r"|matt|spiegelnd|entspiegelt"
+_WITH_DE = _WITH_EN + r"|mit|inkl\.?|inklusive|samt|plus|ohne|und"
+_BEFORE_DE = (_BEFORE_EN + r"|defekte?[rsnm]?|kaputte?[rsnm]?|gebrochene?[rsnm]?|gesprungene?[rsnm]?|"
+              r"zerkratzte?[rsnm]?|beschädigte?[rsnm]?|beschaedigte?[rsnm]?|neue?[rsnm]?|neuwertige?[rsnm]?|"
+              r"schwache?[rsnm]?|aufgeblähte?[rsnm]?|aufgeblaehte?[rsnm]?|getauschte?[rsnm]?|lockere?[rsnm]?|"
+              r"originale?[rsnm]?")
+_AFTER_DE = (_AFTER_EN + r"|defekt\w*|kaputt\w*|gebrochen|gesprungen|zersprungen|zerkratzt|beschädigt|beschaedigt|"
+             r"schwach|tot|platt|aufgebläht|aufgeblaeht|getauscht|gewechselt|erneuert|flackert|flimmert|streifen|"
+             r"risse?|pixelfehler|dunkel|nicht|kein\w*|fehlt|tauschen|wechseln|wasserschaden|fehler\w*|"
+             r"kurzschluss|locker|ohne\s+funktion|funktionslos|probleme?|startet|liest|lädt|laedt")
+_BUNDLE_DE = (_BUNDLE_EN + r"|konvolut|sammlung|\bposten\b|\bpaket\b|teilepaket|ersatzteilpaket|\bmehrere\b|"
+              r"\bdiverse\b")
+_VETO_DE = r"(?<![\w-])(?:konsole\w*|consoles?)(?![\w-])"
+
 EN = {
     "number_words": {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
                      "ten": 10, "pair": 2},
@@ -31,6 +115,11 @@ EN = {
                   r"\bcaps\b|docking ?station|\bdock only\b"),
     "market_exclude": (r"broken|defect|faulty|for parts|not working|wanted|buying|swap|trade|repair|"
                        r"locked|icloud|blacklist"),
+    # spare parts without the device (see _part_rx above); "part" is replaced by market.part_regex
+    "part": _part_rx(_STRONG_EN, _START_EN, _WEAK_EN, _FOR_EN, _FLUFF_EN),
+    "part_state": _part_state_rx(_SOLD_EN, _SPEC_EN, _WITH_EN, _BEFORE_EN, _STRONG_EN + "|" + _WEAK_EN, _AFTER_EN),
+    "part_bundle": _BUNDLE_EN,
+    "part_veto": _VETO_EN,
     "negations": r"no|not|without|none|non|zero|nothing",
     # a negation does not reach past these words ("not tested but fake photos")
     "conjunctions": r"but|however|although|yet",
@@ -159,6 +248,10 @@ DE = {
     "market_exclude": (r"defekt|bastler|für teile|fuer teile|ersatzteil|kaputt|drift|suche|ankauf|tausch|reparatur|"
                        r"gesperrt|icloud|broken|defect|for parts|not working|wanted|repair"),
     "negations": r"kein|keine|keinen|keiner|keines|keinerlei|nicht|nichts|ohne|nie|no|not|without|none|nothing",
+    "part": _part_rx(_STRONG_DE, _START_DE, _WEAK_DE, _FOR_DE, _FLUFF_DE),
+    "part_state": _part_state_rx(_SOLD_DE, _SPEC_DE, _WITH_DE, _BEFORE_DE, _STRONG_DE + "|" + _WEAK_DE, _AFTER_DE),
+    "part_bundle": _BUNDLE_DE,
+    "part_veto": _VETO_DE,
     "conjunctions": r"aber|jedoch|doch|sondern|but|however",
     "no_damage": r"(keine?|keinerlei|nichts|ohne|none|no|nothing)\b",
     "reserved_title": r"\b(reserviert|verkauft|angezahlt|reserved|sold)\b",
@@ -292,6 +385,10 @@ class Locale:
         self.with_clause = re.compile(r"(?:" + d["with_words"] + r")\s*(?:\d+\s*)?(?:x\s*)?(?:[\w.-]+\s+){0,2}?"
                                       r"[\w.-]+(?:\s+(?:" + d["with_words"] + r"|,)\s*[\w.-]+)*", re.I)
         self.accessory = d["accessory"]
+        self.part = d["part"]
+        self.part_state = re.compile(d["part_state"], re.I)
+        self.part_bundle = d["part_bundle"]
+        self.part_veto = re.compile(d["part_veto"], re.I)
         self.market_exclude = d["market_exclude"]
         self.negations = d["negations"]
         self.conjunctions = d["conjunctions"]
