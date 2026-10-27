@@ -53,7 +53,7 @@ there `deal_engine` is importable without installing it.
 **As a package**, from a release tag:
 
 ```sh
-pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.6"
+pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.7"
 ```
 
 This installs the `deal_engine` package including the built-in prompts and the deal list page.
@@ -440,6 +440,23 @@ filters:
   fields:
     km: {max: 60000}
     year: {min: 2010, missing: fail}   # without a value the listing fails (default: passes)
+```
+
+### Filter hooks
+
+Rules a regex cannot express go into code (since 0.2.7): `filters.hooks: ["module:function"]`
+(loaded like adapters and score hooks, see `plugin_paths`). Each hook gets the normalized listing
+before the candidate selection, after the cheaper filters, and returns None/False (passes) or a
+reason (fails, the listing is no candidate and not evaluated). Typical use: a clothing size read
+from the title with the same code a score hook uses for the evaluated fields. Hooks do not run on the
+stored listings (the state recheck applies only the declarative filters); they do apply to the history
+tracking of searches without market groups. The run log names how many listings the hooks rejected,
+with examples. A hook that raises lets the listing pass and is logged; one that is not callable is a
+ConfigError at the start of the run.
+
+```yaml
+filters:
+  hooks: ["my_rules:size_from_title"]
 ```
 
 ### Category quotas

@@ -20,9 +20,10 @@ from datetime import timedelta
 from ..adapters.base import Blocked, check_result
 from . import classify, clock, history
 from . import config as config_mod
+from . import filters as filters_mod
 from . import locale as locale_mod
 from .config import ConfigError
-from .filters import fields_failed, has_signal, passes, title_failed
+from .filters import fields_failed, has_signal, hook_failed, passes, title_failed
 from .groups import bundle_qty, drop_part, extras_value, from_classification, is_accessory, is_bundle_group, match_group
 from .listing import EXTRA_NAME, RESERVED, normalize, shipping_unknown
 from .market import due as market_due, refresh as market_refresh, resale_from_ask, settings as market_settings
@@ -328,8 +329,13 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
     classified = classified or {}
     parts, part_rx, n_part = sc.get("parts", "llm"), mc.get("part_regex"), 0
     cands, too_expensive, no_signal, n_cls = [], 0, 0, 0
+    hook_rej = []
     for sid, it in items.items():
         if not considered(sid, it, known, seen, flt):
+            if flt.get("hooks") and sid not in known and it["status"] == "active":
+                why = hook_failed(it, flt)   # only to name what the filter hooks rejected
+                if why:
+                    hook_rej.append(why)
             continue
         sig = has_signal(it, flt)
         c = from_classification(it["title"], classified.get(sid), groups)
@@ -370,6 +376,12 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
             no_signal += 1   # no defect signal and no market price to judge a flip
             continue
         cands.append(it)
+    if hook_rej:
+        ex = "; ".join(dict.fromkeys(hook_rej[:3]))
+        log(f"{len(hook_rej)} listings rejected by filter hooks (e.g. {ex})")
+    for spec, (n_err, err) in list(filters_mod.HOOK_ERRORS.items()):
+        log(f"filter hook {spec} failed {n_err} times, those listings passed it ({err})")
+    filters_mod.HOOK_ERRORS.clear()
     if n_cls:
         log(f"{n_cls} listings skipped as accessories (LLM classification)")
     if n_part:

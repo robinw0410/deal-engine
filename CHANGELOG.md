@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.7 – 2026-10-27
+
+### Added
+
+- **Filter hooks** (`filters.hooks: ["module:function"]`): hard filters in code, called with the
+  normalized listing in `filters.passes()` after the declarative filters; a truthy return value (a
+  reason) rejects the listing before the selection and the evaluation. Loaded and checked at the
+  start of a run like score hooks (`filters.load_hooks`, ConfigError for a non-list, an unloadable
+  or not callable spec); `filters.hook_failed()` names the rejecting hook, `select()` logs how many
+  listings the hooks rejected (with examples). A hook that raises lets the listing pass (logged), like
+  score hooks. Not applied to the stored listings; applied to the history tracking of searches without
+  market groups.
+
 ## 0.2.6 – 2026-10-27
 
 ### Added

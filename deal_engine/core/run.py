@@ -15,7 +15,7 @@ import json
 from dataclasses import asdict, dataclass, field
 
 from .. import adapters
-from . import classify, insights, llm, pipeline, score
+from . import classify, filters, insights, llm, pipeline, score
 from . import config as config_mod
 from . import locale as locale_mod
 from .config import ConfigError
@@ -123,6 +123,7 @@ def run_search(cfg, name, evaluator="claude", render=True, log=print):
     P = config_mod.paths(cfg, name)
     # check what can only fail later (score hooks, page config) before anything is collected
     score.load_hooks(score.settings(cfg, sc))
+    filters.load_hooks(sc.get("filters"))
     if render:
         from ..web import render as web_render
         web_render.cfg_for(name, sc, cfg)
