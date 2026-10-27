@@ -95,7 +95,7 @@ SKIP = {"id", "urls", "title", "price", "price_history", "location", "summary", 
         "_urls_by_source", "first_seen", "last_seen", "last_check_failed", "status", "why_interesting", "issues",
         "missing_parts", "message_draft", "seller_questions", "parts_in_stock", "score_calc", "score_ai",
         "score_exact", "tier_ai", "negotiation", "relisted", "sold_info", "days_online", "price_drops",
-        "market_resale_estimate_ask"}
+        "market_resale_estimate_ask", "market_extras"}
 
 
 def ui(loc, key, **kw):

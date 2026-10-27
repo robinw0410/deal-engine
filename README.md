@@ -245,8 +245,11 @@ Extras with their own market group raise the **candidate threshold** of a device
 (device median + n × that group's median) × ratio, n counted from the title ("+ 2 Controller" = 2,
 "+ Controller" = 1, "mit zwei Controllern" = 2; "ohne Controller" and "Controller-Ladestation" = 0,
 at most 8). Extras without market data and anything no group covers (games) add nothing. Only
-the candidate selection uses it (the candidate gets `market_extras`); the evaluation, the market
-statistics and `market_resale_estimate` are unchanged.
+the candidate selection uses it; the market statistics and `market_resale_estimate` are unchanged.
+The candidate (and the stored listing, refreshed on every run) carries `market_extras`
+(`[{group, count, median}]`), which the evaluation sees as plain input; it is not shown on the page.
+A unit followed by "fehlt", "defekt", "Drift" etc. counts 0, a model number ("DualShock 4
+Controller") is no count, and "2 Controller (1 defekt)" counts 1.
 
 With `classify` enabled (`classify: {enabled: true, model: haiku, max_per_run: 600, batch: 150}`)
 and the LLM evaluator (`claude`), `collect` asks the classification model about the titles of the

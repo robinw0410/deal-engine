@@ -14,6 +14,7 @@ Quantity words, "with/inkl." clauses, the default accessory words and the spare-
 (core/locale.py); every function takes an optional locale (default English).
 """
 import re
+from functools import lru_cache
 
 from . import locale as locale_mod
 
@@ -102,20 +103,55 @@ def has_extras(title, loc=None):
 _EXTRA_ADJ = r"(?:original\w*|orig\.?|weitere\w*|zusätzliche\w*|zusaetzliche\w*|additional|extra|neue\w*|new|wireless|kabellose\w*)\s+"
 
 
+# right after an extra: that unit is missing, broken or not original and adds nothing ("Controller fehlt",
+# "Controller defekt", "Controller (Drift)"); fillers between count and extra ("2 originale Sony Controller")
+_GONE = (r"fehl\w*|nicht\s+(?:dabei|enthalten|inkl\w*|vorhanden|original|funktionsf\w+)|keiner\b|missing|not\s+included|"
+         r"defekt\w*|kaputt\w*|ohne\s+funktion|funktionslos|(?:mit\s+|stick[- ]?)?drift|broken|faulty|fake|nachbau|"
+         r"drittanbieter|third.?party")
+_FILLER = r"(?:sony|microsoft|nintendo|xbox|ps[45]|playstation\s*[45]|schwarze?\w*|wei(?:ß|ss)e?\w*|blaue?\w*|rote?\w*)"
+
+
+@lru_cache(maxsize=256)
+def _extras_rx(extra_regex, code):
+    L = _loc(code)
+    num = r"\d{1,2}|" + "|".join(sorted(map(re.escape, L.number_words), key=len, reverse=True))
+    unit = r"(?:" + extra_regex + r")"
+    return re.compile(
+        r"(?<![\w-])(?:(" + num + r")\s*(?:[x×]\s*)?)?"                          # count: "2", "2x", "zwei"
+        r"((?:(?:" + _EXTRA_ADJ[:-len(r"\s+")] + r"|" + _FILLER + r")\s+){0,2})"   # "originale", "Sony", "schwarze"
+        # "DualShock 4 Controller", "DualSense Edge Controller": one mention, the model number is no count
+        + unit + r"(?:[\s-]*(?:(?:\d|(?!(?:und|and|oder|or|mit|with|plus)\b)[a-zäöüß]+)\b[\s-]*)?" + unit + r")*"
+        r"(?:\s*[x×]\s*(\d{1,2})\b)?", re.I)                                       # "Controller x2"
+
+
 def extras_count(title, extra_regex, loc=None):
     """How many units of an extra the title lists with the device ("PS4 + 2 Controller" = 2, "+ Controller"
-    = 1, "mit zwei Controllern" = 2, "ohne Controller" = 0), at most 8 in total."""
+    = 1, "mit zwei Controllern" = 2, "+ DualShock 4 Controller" = 1); 0 for "ohne Controller", "Controller
+    fehlt/defekt/(Drift)", "Controllerladestation"; "2 Controller (1 defekt)" = 1; at most 8 in total."""
     L = _loc(loc)
-    num = r"\d{1,2}|" + "|".join(sorted(map(re.escape, L.number_words), key=len, reverse=True))
-    rx = re.compile(r"(?:\b(" + num + r")\s*(?:x\s*)?)?(?:" + _EXTRA_ADJ + r")?(?:" + extra_regex + r")", re.I)
+    t = title or ""
     n = 0
-    for m in rx.finditer(title or ""):
-        if re.search(r"\b(?:" + L.negations + r")\s+(?:\w+\s+)?$", title[:m.start()], re.I):
-            continue   # "ohne Controller", "without controller"
-        if re.match(r"[\s-]*(?:" + L.accessory + r"|stick|tasten?|buttons?|port|buchse|akku|battery|platine)", title[m.end():], re.I):
+    for m in _extras_rx(extra_regex, L.code).finditer(t):
+        before, after = t[:m.start()], t[m.end():]
+        if re.search(L.accessory, m.group(0), re.I):
+            continue   # "Controllerladestation"
+        if re.match(r"[\s-]*(?:" + L.accessory + r"|stick|tasten?|buttons?|port|buchse|akku|battery|platine)", after, re.I):
             continue   # "Controller Ladestation", "Controller-Stick defekt": not a controller
-        v = (m.group(1) or "").lower()
-        n += L.number_words.get(v) or (int(v) if v.isdigit() else 1)
+        if not m.group(1) and re.search(r"\b(?:" + L.negations + r")\s+(?:[\w.-]+\s*(?:,|und|oder|&|/)\s*|\w+\s+)?$",
+                                        before, re.I):
+            continue   # "ohne Controller", "ohne Kabel und Controller"; not "ohne OVP 2 Controller"
+        if m.group(1) and re.search(r"\b(?:" + L.negations + r")\s+$", before, re.I):
+            continue   # "keine 2 Controller"
+        if re.match(r"[\s:(-]*(?:" + _GONE + r")", after, re.I):
+            continue   # "Controller fehlt", "Controller defekt", "Controller (Drift)"
+        v = (m.group(1) or m.group(3) or "").lower()
+        if m.group(1) and L.not_qty.search(t[:m.start(1)]):
+            v = (m.group(3) or "").lower()   # "PS 4 Controller", "Elite Series 2 Controller": model number
+        k = L.number_words.get(v) or (int(v) if v.isdigit() else 1)
+        d = re.match(r"\s*[(,]?\s*(?:davon\s+)?(\d|ein\w*)\s+(?:\w+\s+)?(?:" + _GONE + r")", after, re.I)
+        if d:   # "2 Controller (1 defekt)", "2 Controller, 1 ohne Funktion"
+            k -= L.number_words.get(d.group(1).lower()) or (int(d.group(1)) if d.group(1).isdigit() else 1)
+        n += max(k, 0)
     return max(0, min(n, 8))
 
 
@@ -243,7 +279,11 @@ def check_groups(groups, where="market.groups"):
             for name, rx in ex.items():
                 if name not in names or name == g["name"]:
                     raise ValueError(f"{where}[{i}] ({g['name']}): extras group '{name}' is not another group")
+                if not isinstance(rx, str) or not rx.strip():
+                    raise ValueError(f"{where}[{i}] ({g['name']}): extras '{name}' needs a non-empty regex")
                 try:
-                    re.compile(str(rx), re.I)
+                    c = re.compile(rx, re.I)
                 except re.error as e:
                     raise ValueError(f"{where}[{i}] ({g['name']}): invalid regex in extras '{name}': {e}")
+                if c.match(""):
+                    raise ValueError(f"{where}[{i}] ({g['name']}): extras regex '{name}' matches the empty string")

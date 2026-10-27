@@ -13,7 +13,7 @@ from datetime import date, timedelta
 
 from . import clock, history
 from . import locale as locale_mod
-from .groups import bundle_qty, from_classification, is_accessory, match_group
+from .groups import bundle_qty, extras_value, from_classification, is_accessory, match_group
 from .market import resale_from_ask, settings as market_settings, sold_estimate
 from .score import negotiation_head, opening_discount
 from .util import load_json, median, save_json
@@ -130,9 +130,14 @@ def apply(cfg, sc, paths, log=print):
                 l["market_group"], l["market_median"], l["market_n"] = grp["name"], m["median"], m["n"]
                 l["market_resale_estimate_ask"] = resale_from_ask(m, ms["sale_factor"])
                 l["market_resale_estimate"] = l["market_resale_estimate_ask"]
+                _, parts = extras_value(l.get("title"), grp, market, loc)   # fresh medians, as at the selection
+                if parts:
+                    l["market_extras"] = [{"group": n, "count": c, "median": market[n]["median"]} for n, c in parts]
+                else:
+                    l.pop("market_extras", None)
             else:
                 for k in ("market_group", "market_median", "market_n", "market_resale_estimate",
-                          "market_resale_estimate_ask"):
+                          "market_resale_estimate_ask", "market_extras"):
                     l.pop(k, None)
                 if grp:
                     l["market_group"] = grp["name"]

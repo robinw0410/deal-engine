@@ -10,8 +10,15 @@
   median) × ratio; n is counted from the title (`groups.extras_count`: numbers and number words,
   "+ Controller" = 1, negations and accessory/part words right after it = 0, at most 8). Extras
   without market data and games add nothing. Candidate selection only; the candidate carries
-  `market_extras`. Groups are checked at load (other group, valid regex). Without `extras` nothing
-  changes.
+  `market_extras` (refreshed with the market data on every run, not shown on the page). Groups are
+  checked at load (other group, non-empty regex that does not match the empty string). Without
+  `extras` nothing changes.
+- Counting rule: a model number is no count ("DualShock 4 Controller", "PS 4 Controller" = 1; brand
+  and unit word right after each other are one mention); a unit followed by "fehlt", "nicht dabei",
+  "defekt", "kaputt", "ohne Funktion", "Drift" or "fake" counts 0, "2 Controller (1 defekt)" counts 1;
+  "Controllerladestation" counts 0; up to two fillers between count and unit ("2 originale Sony
+  Controller"), "Controller x2"; a negation reaches "ohne Kabel und Controller" but not "ohne OVP 2
+  Controller".
 
 ## 0.2.5 – 2026-10-27
 

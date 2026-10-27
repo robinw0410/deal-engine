@@ -81,3 +81,39 @@ def test_extras_config_checked(extras, msg):
     groups = [GROUPS[0], {**GROUPS[1], "extras": extras}]
     with pytest.raises((ValueError, ConfigError), match=msg):
         check_groups(groups)
+
+
+# review cases: the regex of a console's controller group, model numbers, missing/broken units, fillers
+PS = r"controller\w*|dualshock\w*|dualsense\w*|gamepads?"
+
+
+@pytest.mark.parametrize("title, n", [
+    ("PS4 + 2 Controller + 6 Spiele", 2), ("PS5 + 2 Controller", 2), ("PS4 2 Spiele 1 Controller", 1),
+    ("PS4 zwei Spiele und ein Controller", 1), ("PS4 + ein Controller", 1), ("PS4 3 Spiele, 2 Controller", 2),
+    ("PS4 + Controller defekt", 0), ("PS4 Controller fehlt", 0), ("PS4 Slim 1 Controller fehlt", 0),
+    ("PS4 + Controller kaputt", 0), ("PS4 + Controller ohne Funktion", 0), ("PS4 + Controller (Drift)", 0),
+    ("PS4 + Controller mit Drift", 0), ("PS4 Controller nicht dabei", 0), ("PS4 keine Controller", 0),
+    ("PS4 + 2 Controller (1 defekt)", 1), ("PS4 + 2 Controller, 1 ohne Funktion", 1),
+    ("PS4 + 1 Controller + 1 Controller fehlt", 1), ("PS4 + 2 Controller + 6 Spiele | Stick-Drift", 2),
+    ("PS4 + Controllerladestation", 0), ("PS4 + Controller-Ladestation + 2 Controller", 2),
+    ("PS4 ohne OVP 2 Controller", 2), ("PS4 ohne Spiele mit 2 Controllern", 2), ("PS4 ohne Kabel und Controller", 0),
+    ("PS4 + Controller x2", 2), ("PS4 + 2x Controller", 2),
+    ("PS4 + DualShock 4 Controller", 1), ("PS4 + 2 DualShock 4 Controller", 2), ("PS4 mit 2 DualShock-4-Controllern", 2),
+    ("PS4 Slim + PlayStation 4 Controller", 1), ("PS4 + PS 4 Controller", 1), ("PS5 + DualSense Controller", 1),
+    ("PS5 + 2 DualSense Controller", 2), ("PS4 + zwei originale Dualshock Controller", 2),
+    ("PS4 + 2 Original Sony Controller", 2), ("PS4 + 2 schwarze Controller", 2), ("PS4 + Controller + Controller", 2),
+    ("Xbox One X + Kinect + 2 Controller", 2), ("PS4 Slim 500GB 2 Controller", 2), ("PS4 + 20 Controller", 8),
+])
+def test_extras_count_review_cases(title, n):
+    assert extras_count(title, PS, DE) == n
+
+
+@pytest.mark.parametrize("rx", ["", "   ", "a|", None])
+def test_extras_regex_must_not_be_empty(rx):
+    groups = [GROUPS[0], {**GROUPS[1], "extras": {"Pad": rx}}]
+    with pytest.raises(ValueError):
+        check_groups(groups)
+
+
+def test_extras_forward_reference_allowed():
+    check_groups([{"name": "Console", "match": "konsole", "extras": {"Pad": PAD}}, {"name": "Pad", "match": "pad"}])
