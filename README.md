@@ -53,7 +53,7 @@ there `deal_engine` is importable without installing it.
 **As a package**, from a release tag:
 
 ```sh
-pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.8"
+pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.9"
 ```
 
 This installs the `deal_engine` package including the built-in prompts and the deal list page.
@@ -302,6 +302,11 @@ title starting with "Ersatzteil", is a part even when the classification says de
 noun with a state word ("Ersatzteile Board defekt"), a device sold "als Ersatzteil", an
 "Ersatzteilspender" or a title naming a console stays a device.
 
+Since 0.2.9 a title starting (after "100 %", "original", "neu" …) with a part noun followed by "für"/"for"/
+"passend" ("Display für iPhone 15", "Netzteil für PS5") is a part against a device classification too;
+"Leergehäuse", HDD/SSD enclosures, a brandless "NAS Gehäuse" and a standalone PC power supply ("650W
+Netzteil") are parts.
+
 ```yaml
 searches:
   repairs:
@@ -538,7 +543,9 @@ prompts:                     # globally, or inside a search (search wins)
 
 Without an override the built-in prompt for the locale is used
 (`deal_engine/core/prompts/{en,de}/`). The search's `profile` is put in front of the evaluate and
-prefilter prompts. Placeholders: `{{CANDIDATES}}`, `{{ACCEPTED}}`, `{{DATE}}` (evaluate),
+prefilter prompts. It is one file or a list of files (`profile: [profiles/clothes.md,
+profiles/clothes-stock.md]`), joined in order with a blank line – handy for a part the owner
+edits separately, like an inventory; a missing file is a config error. Placeholders: `{{CANDIDATES}}`, `{{ACCEPTED}}`, `{{DATE}}` (evaluate),
 `{{CANDIDATES}}`, `{{PREFILTER}}` (prefilter), `{{GROUPS}}`, `{{TITLES}}` (classify), and
 `{{WANTED_ADS}}` in evaluate and prefilter.
 

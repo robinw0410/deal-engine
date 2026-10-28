@@ -287,8 +287,9 @@ def test_select_classification_part_and_device():
     cls = {"2": (None, 1, "part"), "3": ("ThinkPad T480", 1, "device"), "4": ("iPhone 12", 1, "device")}
     # default: only the classification drops
     assert run_select(None, cls)[0] == set(TITLES) - {"2"}
-    # skip: the model's plausible "device" wins over the word rule ("4"), its "part" drops ("2")
-    assert run_select("skip", cls)[0] == {"3", "4", "5"}
+    # skip: the model's plausible "device" wins over the word rule, its "part" drops ("2"); since v0.2.9 a
+    # title starting with a part noun + "für" ("4" "Display für iPhone 12") is a part against "device" too
+    assert run_select("skip", cls)[0] == {"3", "5"}
 
 
 def test_select_accept_part_has_no_market_group():
@@ -301,7 +302,9 @@ def test_select_accept_part_has_no_market_group():
 
 
 def test_select_part_regex_override():
-    assert run_select("skip", part_regex=r"^motherboard")[0] == set(TITLES) - {"2"}
+    # "4" "Display für iPhone 12": the locale's part noun + "für" at the start (part_spare, v0.2.9) applies
+    # besides a custom part_regex, like "Ersatzteil" + part noun
+    assert run_select("skip", part_regex=r"^motherboard")[0] == set(TITLES) - {"2", "4"}
 
 
 # --- config -------------------------------------------------------------------------------------

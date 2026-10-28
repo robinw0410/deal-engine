@@ -75,14 +75,24 @@ def _valid_state(p):
         return False
 
 
-def _profile(cfg, sc):
+def profile_text(cfg, sc):
+    """Profile text of a search (sc from config.search): one file, or a list of files joined in order
+    with a blank line. A missing file is a ConfigError. Public for scripts that build their own prompts."""
     p = sc.get("profile")
     if not p:
         return ""
-    q = config_mod.resolve(p, cfg)
-    if not q.exists():
-        raise ConfigError(f"search '{sc['_name']}': profile not found: {q}")
-    return q.read_text()
+    texts = []
+    for f in ([p] if isinstance(p, str) else p):
+        q = config_mod.resolve(f, cfg)
+        if not q.exists():
+            raise ConfigError(f"search '{sc['_name']}': profile not found: {q}")
+        texts.append(q.read_text())
+    if len(texts) == 1:
+        return texts[0]
+    return "\n\n".join(t.rstrip("\n") for t in texts) + "\n"
+
+
+_profile = profile_text   # old private name
 
 
 def llm_prefilter(cfg, sc, work, log=print):

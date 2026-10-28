@@ -46,7 +46,8 @@ deals:
 searches:
   electronics:
     title: Electronics
-    profile: profiles/electronics.md   # search criteria and evaluation rules for the LLM
+    profile: profiles/electronics.md   # search criteria and evaluation rules for the LLM; also a list of
+                                       # files, joined in order (e.g. [profiles/x.md, profiles/x-stock.md])
     adapters: [json_file]              # add "ebay" once EBAY_CLIENT_ID/SECRET are set
     json_file:
       path: "{data_dir}/listings.json"

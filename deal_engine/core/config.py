@@ -100,6 +100,10 @@ def search(cfg, name):
         check_groups((sc.get("market") or {}).get("groups"), f"searches.{name}.market.groups")
     except ValueError as e:
         raise ConfigError(str(e))
+    prof = sc.get("profile")
+    if prof is not None and not isinstance(prof, str) and not (
+            isinstance(prof, list) and prof and all(isinstance(f, str) and f for f in prof)):
+        raise ConfigError(f"search '{name}': profile must be a file path or a list of file paths, not {prof!r}")
     if sc["wanted_ads"] not in ("reject", "accept"):
         raise ConfigError(f"search '{name}': wanted_ads must be 'reject' or 'accept', not {sc['wanted_ads']!r}")
     from .groups import PARTS_MODES

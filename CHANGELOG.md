@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.2.9 – 2026-10-28
+
+### Added
+
+- **`profile` as a list of files** (`profile: ["profiles/a.md", "profiles/b.md"]`): joined in order with a
+  blank line, for the prefilter and the evaluation; a string works as before. A missing file is the same
+  `ConfigError` as before, a wrong type or an empty list is a `ConfigError` at load time.
+  `deal_engine.core.run.profile_text(cfg, sc)` returns this joined text for scripts that build their own
+  prompts.
+
+### Fixed
+
+- **Spare parts that passed `parts: skip`** (locale de):
+  - a leading "100 % " no longer counts as the middle of a title, so "100 % Original Display Für IPHONE
+    15 Pro Max LCD" is a part again ("iPhone 13 100 % Original Display" stays a device);
+  - a title starting (after "100 %", "original", "neu" …) with a part noun followed by "für/for/passend"
+    ("Display für …", "Netzteil für PS5", "Mainboard für ThinkPad T480") is a part also when the
+    classification says device; console titles and "Netzteil defekt für PS4 Bastler" stay devices;
+  - new part words: "HDD-/SSD-/Festplatten-/NVMe-Gehäuse"; "NAS Gehäuse" and "Leergehäuse" at the start
+    of a title without a NAS brand or model (Synology, QNAP, DS218, TS-251 … "ohne HDD" or "QNAP TS-453
+    Pro Leergehäuse" stay devices); a standalone PC power supply when the title starts with the wattage,
+    ATX/SFX or a PSU brand and then the wattage ("650W Netzteil", "Corsair RM750x 750W ATX Netzteil"),
+    while "<model> 65W Netzteil" (mini PC, laptop, printer, switch …) and titles naming a PC, laptop,
+    NAS, console or PC component stay devices; "Netzteil" also counts with "für/passend", while
+    "<device> Netzteil passend dabei" stays a device.
+
 ## 0.2.8 – 2026-10-27
 
 ### Fixed

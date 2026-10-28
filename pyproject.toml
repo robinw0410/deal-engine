@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "deal-engine"
-version = "0.2.8"
+version = "0.2.9"
 description = "Self-hosted engine for finding second-hand deals: listing state, market prices, tracking, LLM evaluation and scoring"
 readme = "README.md"
 license = { file = "LICENSE" }

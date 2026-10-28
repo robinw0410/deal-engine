@@ -33,15 +33,18 @@ import re
 _NB = r"(?![\w-])"
 
 
-def _part_rx(strong, start, follow, for_words, fluff):
+def _part_rx(strong, start, follow, for_words, fluff, extra=None):
     return (r"(?<![\w-])(?:" + strong + r")"
             + r"|^\W*(?:(?:" + fluff + r")\s+)*(?:" + start + r"|" + strong + r")" + _NB
             + r"|(?<![\w-])(?:" + follow + r")" + _NB + r"\W+(?:[\w.-]+\s+){0,2}?(?:" + for_words + r")(?!\w)"
-            + r"|(?<![\w-])(?:ersatz|replacement)[- ]?(?:" + follow + r")" + _NB)
+            + r"|(?<![\w-])(?:ersatz|replacement)[- ]?(?:" + follow + r")" + _NB
+            + (r"|" + extra if extra else ""))
 
 
 def _part_state_rx(sold_for_parts, spec, with_words, before, parts, after):
-    mid = r"(?<=\S\s)"   # in the middle of a title: "Neuer Akku für MacBook" (at the start) is a part
+    # in the middle of a title: "Neuer Akku für MacBook" (at the start) is a part; a leading "100 %"
+    # does not make it the middle ("100 % Original Display für iPhone 15": eBay part listing)
+    mid = r"(?<=\S\s)(?<!%\s)"
     return (r"(?<![\w-])(?:" + sold_for_parts + r")(?!\w)"
             + r"|(?<![\w-])(?:" + with_words + r")\s+(?:(?:" + before + r"|" + spec + r"|[\w.-]+)\s+){0,2}?(?:"
             + parts + r")" + _NB
@@ -94,14 +97,34 @@ _SPARE_EN = _spare_rx(_SPARE_NOUN_EN, _SPARE_STATE_EN, _SP_EN)
 _STRONG_DE = (_STRONG_EN + r"|mainboards?|platinen?|display[- ]?einheit(?:en)?|bildschirm[- ]?einheit(?:en)?|"
               r"(?:lcd|oled|display)[- ]?(?:panel|einheit|modul)\w*|scharnier\w*|ladebuchse\w*|flex ?kabel\w*|"
               r"handauflage\w*|bodenplatte\w*|unterschale\w*|oberschale\w*|rückschale\w*|rueckschale\w*|"
-              r"(?:notebook|laptop)-?(?:tastatur|akku|display|lüfter|luefter)\w*")
+              r"(?:notebook|laptop)-?(?:tastatur|akku|display|lüfter|luefter)\w*|"
+              r"(?:hdd|ssd|festplatten?|m\.?2|nvme)[- ]?geh(?:ä|ae)use\w*")
 _WEAK_DE = (_WEAK_EN + r"|akkus?|batterien?|bildschirm|gehäuse|gehaeuse|tastatur(?:en)?|lüfter|luefter|kühler|kuehler|"
-            r"kameras?|lautsprecher|(?:disc[- ]?|disk[- ]?|blu-?ray[- ]?)?laufwerk\w*")
+            r"kameras?|lautsprecher|(?:disc[- ]?|disk[- ]?|blu-?ray[- ]?)?laufwerk\w*|netzteile?")
+# "NAS Gehäuse ohne HDD", "Leergehäuse" (an enclosure) at the start, unless the title names a NAS brand or
+# model ("NAS Gehäuse Synology DS218 ohne HDD", "QNAP TS-453 Pro Leergehäuse" are devices the search looks
+# for: a NAS sold without disks); "PS2 Leergehäuse Original Ersatzteil" is a part via part_spare
+_NAS_CASE_DE = (r"(?:nas[- ]?geh(?:ä|ae)use|(?:nas[- ]?)?leergeh(?:ä|ae)use\w*)"
+                r"(?!.*(?:synology|diskstation|qnap|asustor|terra-?master|ugreen|netgear|buffalo|zyxel|"
+                r"thecus|drobo|western digital|\bwd\b|\bds\s?\d|\bts-?\s?\d))")
+# a standalone PC power supply: the title starts with the wattage/ATX/SFX ("650W Netzteil") or with a PSU
+# brand and then the wattage ("be quiet 550W Netzteil", "Corsair RM750x 750W ATX Netzteil"); "<model> 65W
+# Netzteil" (a mini PC, laptop, printer, switch … with its power supply) is a device, as is a title that
+# names a PC, laptop, NAS, console or PC component
+_PSU_BRAND_DE = (r"be ?quiet!?|corsair|seasonic|evga|cooler ?master|fsp|enermax|thermaltake|bitfenix|"
+                 r"super ?flower|xilence|lc-?power|chieftec|silverstone|fractal(?: design)?|nzxt|antec|inter-?tech")
+_PSU_DE = (r"^(?!.*(?<![\w-])(?:pc|computer|rechner|tower|server|workstation|nas|laptop|notebook|konsole\w*|"
+           r"consoles?|ps\s?[1-5]|playstation|xbox|ryzen|intel|core|i[3579]|rtx|gtx|radeon|geforce|ram|ddr\d|"
+           r"ssd|hdd|mainboard|cpu|gpu|grafikkarte)(?![\w-]))"
+           r"\W*(?:(?:" + _PSU_BRAND_DE + r")\s+(?:[\w.+-]+\s+){0,2}?)?"
+           r"(?:\d{2,4}\s*w(?:att)?|atx|sfx)[\s-]+(?:[\w.+-]+\s+){0,3}?netzteile?" + _NB)
 _START_DE = (_START_EN + r"|akkus?(?!\s+(?:staub\w*|sauger|schrauber|bohr\w*|rasen\w*|mäher|maeher|säge|saege|lampe|"
              r"leuchte|radio|lautsprecher|box|heckenschere|trimmer|gebläse|geblaese|laubbläser|werkzeug\w*|"
-             r"ladegerät))|batterie|gehäuse|gehaeuse|lüfter|luefter|kühler|kuehler|laufwerk|ersatzteil\w*")
+             r"ladegerät))|batterie|gehäuse|gehaeuse|lüfter|luefter|kühler|kuehler|laufwerk|ersatzteil\w*|"
+             r"netzteile?|" + _NAS_CASE_DE)
 _FOR_DE = _FOR_EN + r"|für|fuer|passend|passt|kompatibel|ersatz"
-_FLUFF_DE = _FLUFF_EN + r"|neu\w*|ersatz|gebraucht|\d+\s*(?:stk\.?|stück|stueck)|konvolut|sammlung|posten"
+_FLUFF_DE = (_FLUFF_EN + r"|neu\w*|ersatz|gebraucht|\d+\s*(?:stk\.?|stück|stueck)|konvolut|sammlung|posten|"
+             r"\d+[- ]?bay")
 _SOLD_DE = (_SOLD_EN + r"|(?:als|für|fuer|zum|zu)\s+(?:(?:ersatz)?teile?\w*|bastler\w*|ausschlachten)|"
             r"(?:ersatz)?teile?[- ]?spender\w*|bastler\w*|"
             r"(?:disc|disk|blu-?ray)?[- ]?laufwerk[- ]?(?:edition|version|variante)|"
@@ -115,7 +138,8 @@ _BEFORE_DE = (_BEFORE_EN + r"|defekte?[rsnm]?|kaputte?[rsnm]?|gebrochene?[rsnm]?
 _AFTER_DE = (_AFTER_EN + r"|defekt\w*|kaputt\w*|gebrochen|gesprungen|zersprungen|zerkratzt|beschädigt|beschaedigt|"
              r"schwach|tot|platt|aufgebläht|aufgeblaeht|getauscht|gewechselt|erneuert|flackert|flimmert|streifen|"
              r"risse?|pixelfehler|dunkel|nicht|kein\w*|fehlt|tauschen|wechseln|wasserschaden|fehler\w*|"
-             r"kurzschluss|locker|ohne\s+funktion|funktionslos|probleme?|startet|liest|lädt|laedt")
+             r"kurzschluss|locker|ohne\s+funktion|funktionslos|probleme?|startet|liest|lädt|laedt|"
+             r"dabei|anbei|vorhanden|enthalten|beiliegend|mitgeliefert")   # "ThinkPad T480 Netzteil passend dabei"
 _BUNDLE_DE = (_BUNDLE_EN + r"|konvolut|sammlung|\bposten\b|\bpaket\b|teilepaket|ersatzteilpaket|\bmehrere\b|"
               r"\bdiverse\b")
 _VETO_DE = r"(?<![\w-])(?:konsole\w*|consoles?)(?![\w-])"
@@ -126,7 +150,16 @@ _SPARE_STATE_DE = (_AFTER_DE + r"|ok|okay|i\.?\s?o\.?|gut|top|einwandfrei|funkti
                    r"laut|kratzer\w*|vorhanden|dabei|fehlend|" + _SPARE_STATE_EN)
 _SP_DE = (r"(?:(?:original|orig\.?|neu\w*)\s+)?(?:ersatz-?teil(?!e?[- ]?spender)\w*|spare\s+parts?|"
           r"replacement\s+parts?)(?!\w)")
-_SPARE_DE = _spare_rx(_SPARE_NOUN_DE, _SPARE_STATE_DE, _SP_DE)
+# The title starts (after "100 %", "original", "neu"…) with a part noun right before "für"/"for"/"passend":
+# a part even against a device classification ("100 % Original Display Für IPHONE 15 Pro Max LCD", "Netzteil
+# für PS5"). Nouns from the strong/weak lists without those that also name whole devices (bildschirm,
+# screen, kamera, lautsprecher, tastatur); "iPhone 13 100 % Original Display", "PS4 Netzteil defekt" stay.
+_LEAD_NOUN_DE = (_STRONG_DE + r"|displays?|lcd|touch ?screens?|batter(?:y|ies)|batterien?|akkus?|housings?|"
+                 r"gehäuse|gehaeuse|fans?|lüfter|luefter|kühler|kuehler|coolers?|laufwerk\w*|drives?|netzteile?")
+_LEAD_DE = (r"^\W*(?:(?:\d+\s*%|original|orig\.?|neu\w*|new|genuine|oem)\s+)*(?:" + _LEAD_NOUN_DE + r")"
+            r"(?:[\s-]+(?:" + _LEAD_NOUN_DE + r")){0,2}" + _NB
+            + r"\W*(?:für|fuer|for|passend(?:\s+(?:für|fuer|for|zu))?)(?!\w)")
+_SPARE_DE = _spare_rx(_SPARE_NOUN_DE, _SPARE_STATE_DE, _SP_DE) + r"|" + _LEAD_DE
 
 EN = {
     "number_words": {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
@@ -282,7 +315,7 @@ DE = {
     "market_exclude": (r"defekt|bastler|für teile|fuer teile|ersatzteil|kaputt|drift|suche|ankauf|tausch|reparatur|"
                        r"gesperrt|icloud|broken|defect|for parts|not working|wanted|repair"),
     "negations": r"kein|keine|keinen|keiner|keines|keinerlei|nicht|nichts|ohne|nie|no|not|without|none|nothing",
-    "part": _part_rx(_STRONG_DE, _START_DE, _WEAK_DE, _FOR_DE, _FLUFF_DE),
+    "part": _part_rx(_STRONG_DE, _START_DE, _WEAK_DE, _FOR_DE, _FLUFF_DE, _PSU_DE),
     "part_state": _part_state_rx(_SOLD_DE, _SPEC_DE, _WITH_DE, _BEFORE_DE, _STRONG_DE + "|" + _WEAK_DE, _AFTER_DE),
     "part_bundle": _BUNDLE_DE,
     "part_veto": _VETO_DE,
