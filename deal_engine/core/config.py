@@ -119,7 +119,23 @@ def search(cfg, name):
     for an in sc.get("adapters") or []:
         if isinstance(sc.get(an), dict):
             _check_backlog(sc[an].get("backlog"), f"searches.{name}.{an}.backlog")
+    for key in ("category_hook", "priority_hook"):
+        if sc.get(key) is not None and not (isinstance(sc[key], str) and sc[key]):
+            raise ConfigError(f"searches.{name}.{key} must be 'module:function', not {sc[key]!r}")
     for i, cap in enumerate(sc.get("category_caps") or []):
+        if not isinstance(cap, dict):
+            raise ConfigError(f"searches.{name}.category_caps[{i}] must be a mapping")
+        has_rx, has_cat = cap.get("regex") is not None, cap.get("category") is not None
+        if has_rx == has_cat:
+            raise ConfigError(f"searches.{name}.category_caps[{i}] needs either regex or category")
+        if has_cat:
+            c = cap["category"]
+            names = c if isinstance(c, list) else [c]
+            if not names or not all(isinstance(x, str) and x for x in names):
+                raise ConfigError(f"searches.{name}.category_caps[{i}].category must be a name or a list of "
+                                  f"names, not {c!r}")
+            if not sc.get("category_hook"):
+                raise ConfigError(f"searches.{name}.category_caps[{i}].category needs searches.{name}.category_hook")
         if isinstance(cap, dict) and cap.get("backlog") is not None and not _count(cap["backlog"]):
             raise ConfigError(f"searches.{name}.category_caps[{i}].backlog must be an integer >= 0, "
                               f"not {cap['backlog']!r}")

@@ -53,7 +53,7 @@ there `deal_engine` is importable without installing it.
 **As a package**, from a release tag:
 
 ```sh
-pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.10"
+pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.11"
 ```
 
 This installs the `deal_engine` package including the built-in prompts and the deal list page.
@@ -484,6 +484,27 @@ At most `max_new_per_run` new candidates per run whose title matches `regex`, an
 `max_share` at most `int(max_share × (state size + max_new_per_run)) − matching entries in the state`
 new ones. This is an approximation that keeps a small state from being blocked; the real share can end
 up somewhat higher. The rest is postponed.
+
+Instead of `regex`, a quota can name `category` (one name or a list) when the search sets
+`category_hook: "module:function"`: the function gets the listing and returns its category name (or
+None, which matches no quota). This is for categories a single regex cannot express, e.g. "first
+matching rule wins" or "none of the others":
+
+```yaml
+category_hook: "my_rules:category"          # listing -> "shoes" | "knit" | ... | "other"
+category_caps:
+  - {name: Shoes, category: shoes, max_new_per_run: 6}
+  - {name: Bags, category: [weekender, washbag], max_new_per_run: 4}
+  - {name: Other, category: other, max_new_per_run: 3}
+```
+
+`priority_hook: "module:function"` (listing -> number, higher first) orders the candidates before the
+quotas and `max_new_per_run` take from the top, and the backlog (`backlog.max` keeps the preferred
+ones first); listings with the same priority stay newest first. With a `category_hook`,
+`backlog.max` keeps the categories evenly (per category the preferred and newest first) instead of
+only the newest overall. A hook that raises counts as
+no category / priority 0 for that listing and is logged; one that cannot be loaded is a
+`ConfigError` before anything is collected. Quotas apply per adapter, like `max_new_per_run`.
 
 ### Backlog of postponed candidates
 

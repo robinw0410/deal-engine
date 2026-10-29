@@ -134,6 +134,7 @@ def run_search(cfg, name, evaluator="claude", render=True, log=print):
     # check what can only fail later (score hooks, page config) before anything is collected
     score.load_hooks(score.settings(cfg, sc))
     filters.load_hooks(sc.get("filters"))
+    pipeline.select_hooks(sc)
     if render:
         from ..web import render as web_render
         web_render.cfg_for(name, sc, cfg)

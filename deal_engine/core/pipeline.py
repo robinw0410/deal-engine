@@ -290,10 +290,14 @@ def backlog_settings(sc, adapter_name=None):
     return {"max": b.get("max"), "max_age_days": b.get("max_age_days")}
 
 
-def bound_backlog(postponed, backlog):
+def bound_backlog(postponed, backlog, priority=None, rank=None):
     """Split postponed candidates (newest first) into (kept, discarded) by backlog.max_age_days
     (published longer ago; without a publication date the age is unknown and the listing stays)
-    and backlog.max (only the newest; listings without a publication date count as the newest)."""
+    and backlog.max (only the newest; listings without a publication date count as the newest).
+    priority: {source_id: number} from the search's priority_hook; higher ones are kept first.
+    rank: {source_id: position within its category_hook category}; with it backlog.max keeps the
+    categories evenly (the newest of each category first) instead of only the newest overall."""
+    priority, rank = priority or {}, rank or {}
     if not backlog:
         return list(postponed), []
     kept, dropped = list(postponed), []
@@ -304,7 +308,8 @@ def bound_backlog(postponed, backlog):
         dropped += old
     if backlog.get("max") is not None:
         n = int(backlog["max"])
-        kept = [it for it in kept if not it.get("_published")] + [it for it in kept if it.get("_published")]
+        kept = sorted(kept, key=lambda it: (-priority.get(it["source_id"], 0), rank.get(it["source_id"], 0),
+                                            bool(it.get("_published"))))
         kept, dropped = kept[:n], dropped + kept[n:]
     return kept, dropped
 
@@ -316,6 +321,34 @@ def considered(sid, it, known, seen, flt):
         return False
     prev = seen.get(sid)
     return not prev or (it.get("price") is not None and bool(prev.get("price")) and it["price"] <= prev["price"] * 0.9)
+
+
+_SELECT_HOOKS = {}
+
+
+def select_hooks(sc):
+    """(category_hook, priority_hook) of the search as functions (None if not set); ConfigError if one
+    cannot be loaded. category_hook(listing) -> category name or None, for category_caps[].category;
+    priority_hook(listing) -> number, higher first (candidates and backlog; then newest first)."""
+    from . import plugins
+    out = []
+    for key in ("category_hook", "priority_hook"):
+        spec = sc.get(key)
+        if not spec:
+            out.append(None)
+            continue
+        if spec not in _SELECT_HOOKS:
+            fn = plugins.load(spec, key.replace("_", " "))
+            if not callable(fn):
+                raise ConfigError(f"{key} '{spec}' is not callable")
+            _SELECT_HOOKS[spec] = fn
+        out.append(_SELECT_HOOKS[spec])
+    return tuple(out)
+
+
+def _cap_names(cap):
+    c = cap.get("category")
+    return {str(x) for x in (c if isinstance(c, (list, tuple)) else [c])}
 
 
 def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPPING_COST, adapter_name=None,
@@ -403,7 +436,40 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
         log(f"{no_signal} listings without defect signal and without market price skipped")
     if too_expensive:
         log(f"{too_expensive} candidates above the market price threshold skipped")
-    cands.sort(key=lambda x: (x.get("_published") or "", x["source_id"]), reverse=True)
+    # order: priority_hook (higher first), then newest first; quotas and max_new_per_run take from the top
+    cat_hook, prio_hook = select_hooks(sc)
+    hook_errs = {}
+
+    def call(key, fn, it, default):
+        try:
+            return fn(it)
+        except Exception as e:      # a broken hook must not break the run (like filter/score hooks)
+            err = hook_errs.setdefault(sc.get(key), [0, ""])
+            err[0] += 1
+            err[1] = f"{type(e).__name__}: {e}"
+            return default
+
+    prio = {}
+    if prio_hook:
+        for it in cands:
+            p = call("priority_hook", prio_hook, it, 0)
+            try:
+                prio[it["source_id"]] = float(p or 0)
+            except (TypeError, ValueError):
+                prio[it["source_id"]] = 0.0
+                err = hook_errs.setdefault(sc.get("priority_hook"), [0, ""])
+                err[0] += 1
+                err[1] = f"not a number: {p!r}"
+
+    def category_of(it):
+        c = call("category_hook", cat_hook, it, None)
+        return None if c is None else str(c)
+    cats = {it["source_id"]: category_of(it) for it in cands} if cat_hook else {}
+
+    def order(lst):
+        lst = sorted(lst, key=lambda x: (x.get("_published") or "", x["source_id"]), reverse=True)
+        return sorted(lst, key=lambda x: -prio.get(x["source_id"], 0))
+    cands = order(cands)
 
     # quotas (e.g. phones): at most max_new_per_run per run, and with max_share at most this share
     # of the state (counting the new ones)
@@ -413,16 +479,25 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
     bl = backlog_settings(sc, adapter_name)
     n_state, held, gone = len(state_listings), [], []
     for cap in sc.get("category_caps") or []:
-        rx = cap["regex"]
+        rx = cap.get("regex")
+        if cap.get("category") is not None:      # by category_hook instead of a title regex
+            names = _cap_names(cap)
+
+            def hit(it, names=names):
+                c = cats[it["source_id"]] if it.get("source_id") in cats else category_of(it)
+                return c is not None and c in names
+        else:
+            def hit(it, rx=rx):
+                return bool(re.search(rx, str(it.get("title") or ""), re.I))
         allowed = int(cap.get("max_new_per_run", 5))
         if cap.get("max_share") is not None:
             # approximation: share of the state as if max_new_per_run matching listings were added
             # (exact shares would block everything while the state is still small)
-            in_state = sum(1 for l in state_listings if re.search(rx, str(l.get("title") or ""), re.I))
+            in_state = sum(1 for l in state_listings if hit(l))
             allowed = min(allowed, max(0, int(float(cap["max_share"]) * (n_state + allowed)) - in_state))
         kept, rest, n_cap = [], [], 0
         for it in cands:
-            if re.search(rx, it["title"], re.I):
+            if hit(it):
                 if n_cap >= allowed:
                     rest.append(it)
                     continue
@@ -437,13 +512,22 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
                 n_gone = max(0, len(rest) - int(cap_bl))
                 gone += rest[int(cap_bl):]
                 rest = rest[:int(cap_bl)]
-            log(f"quota '{cap.get('name', rx)}': {len(rest)} candidates postponed"
+            log(f"quota '{cap.get('name') or rx or cap.get('category')}': {len(rest)} candidates postponed"
                 + (f", {n_gone} discarded (backlog)" if n_gone else ""))
             held += rest
         cands = kept
     limit = max_new(sc, adapter_name)
-    postponed = sorted(held + cands[limit:], key=lambda x: (x.get("_published") or "", x["source_id"]), reverse=True)
-    postponed, dropped = bound_backlog(postponed, bl)
+    postponed = order(held + cands[limit:])
+    rank = {}
+    if cat_hook:     # backlog.max cuts evenly across categories, not only the oldest overall
+        n_cat = {}
+        for it in postponed:
+            c = cats.get(it["source_id"])
+            rank[it["source_id"]] = n_cat.get(c, 0)
+            n_cat[c] = n_cat.get(c, 0) + 1
+    postponed, dropped = bound_backlog(postponed, bl, prio, rank)
+    for spec, (n_err, err) in hook_errs.items():
+        log(f"selection hook {spec} failed {n_err} times, treated as no category / priority 0 ({err})")
     if discarded is not None:
         discarded += gone + dropped
     return cands[:limit], len(postponed)

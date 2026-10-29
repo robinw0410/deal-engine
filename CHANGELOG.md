@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.11 – 2026-10-29
+
+### Added
+
+- **`category_caps[].category` with `category_hook`**: a quota can count listings by a category the
+  search's hook returns (`category_hook: "module:function"`, listing -> name or None) instead of a title
+  regex; `category` takes one name or a list. `max_share` counts the state through the same hook.
+- **`priority_hook`** (`"module:function"`, listing -> number): higher first when candidates are picked
+  (before quotas and `max_new_per_run`) and when the backlog is bounded; same priority: newest first.
+- With a `category_hook`, `backlog.max` discards evenly across categories (per category the
+  preferred and newest stay) instead of only the oldest overall.
+- Hooks that raise are logged and count as no category / priority 0; unloadable hooks are a
+  `ConfigError` before collecting. A quota needs exactly one of `regex` / `category` (`ConfigError`).
+
 ## 0.2.10 – 2026-10-29
 
 ### Fixed
