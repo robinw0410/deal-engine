@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.10 – 2026-10-29
+
+### Fixed
+
+- **eBay `category_ids` with several ids gave HTTP 400**: the Browse API takes one category id per
+  request. Several ids (`"a,b"` or a list) now mean one request per id and marketplace.
+- **eBay errors are readable**: on HTTP 4xx (and 5xx after retries) the `errors[]` of the response
+  (`errorId`, message; shortened, without token or key) is part of the message.
+- **One failing eBay request no longer drops the whole term**: failed requests of a term are skipped and
+  reported as problems (status `partial`); the term fails only if all its requests failed. Other terms
+  ran on before and still do. HTTP 429 still stops the adapter.
+
+### Added
+
+- **`ebay.keyword_categories`**: category id(s) per search term, overriding `category_ids`; a key that is
+  not a configured search term or has no id is a `ConfigError`. Queries of other terms (e.g. market groups)
+  use `category_ids`.
+- **`Adapter.warnings`**: adapters can report partial failures of a search; the pipeline moves them into
+  the run's problems.
+
 ## 0.2.9 – 2026-10-28
 
 ### Added

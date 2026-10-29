@@ -66,6 +66,15 @@ def _image_ext(data):
     return None
 
 
+def _warnings(adapter, query, problems, loc):
+    """Move the adapter's warnings (partial failures of a search) into the problems of the run."""
+    ws = getattr(adapter, "warnings", None)
+    if isinstance(ws, list) and ws:
+        problems += [loc.t("prob.search", adapter=adapter.name, query=query.get("keyword") or "*", error=w)
+                     for w in ws]
+        ws.clear()
+
+
 def _search(adapter, query, home, road_factor, items, problems, loc):
     try:
         raw = adapter.search(query)
@@ -74,6 +83,8 @@ def _search(adapter, query, home, road_factor, items, problems, loc):
     except Exception as e:
         problems.append(loc.t("prob.search", adapter=adapter.name, query=query.get("keyword") or "*", error=e))
         return 0
+    finally:
+        _warnings(adapter, query, problems, loc)
     bad = 0
     for r in raw:
         try:

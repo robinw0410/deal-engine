@@ -13,8 +13,14 @@ Search config:
     conditions: [3000, 7000]    # eBay condition ids (3000 used, 7000 for parts / not working)
     limit: 50
     include_auctions: false
-    category_ids: ""            # optional
+    category_ids: ""            # optional, one id or several ("11484,57989" or a list)
+    keyword_categories:         # optional, per search term (overrides category_ids for that term)
+      "cordhose herren": 57989
+      "brogue herren": [53120, 24087]
     keywords: [...]             # optional, otherwise the search's keywords
+The Browse API takes only ONE category id per request: several ids mean one request per id and market
+(count them against the daily call limit of your key). A request that fails (HTTP 4xx/5xx) is skipped
+with a warning; the term fails only if all its requests failed. HTTP 429 stops the adapter (Blocked).
 Location for shipping costs: location.postal_code / location.country in the config.
 """
 import base64
@@ -87,6 +93,43 @@ def to_listing(s, market):
     }
 
 
+def _term(k):
+    return re.sub(r"\s+", " ", str(k or "")).strip().lower()
+
+
+def _ids(v):
+    """Category ids as a list of strings: "1,2", [1, 2], 1 -> ["1", "2"] / ["1"]; nothing -> []."""
+    vals = v if isinstance(v, (list, tuple)) else str(v if v is not None else "").split(",")
+    return list(dict.fromkeys(s for s in (str(x).strip() for x in vals) if s))
+
+
+def _error_text(e, secrets=()):
+    """eBay error body of an HTTPError as "errorId 12345: message; ...", short, without credentials."""
+    try:
+        body = e.read() if e.fp is not None else b""
+    except Exception:
+        body = b""
+    try:
+        errs = (json.loads(body or b"{}") or {}).get("errors") or []
+    except (ValueError, AttributeError):
+        errs = []
+    parts = []
+    for x in errs[:3] if isinstance(errs, list) else []:
+        if isinstance(x, dict):
+            msg = _scrub(" ".join(str(x.get("longMessage") or x.get("message") or "").split()), secrets)
+            parts.append(f"errorId {x.get('errorId')}: {msg[:160]}" if x.get("errorId") is not None else msg[:160])
+    return "; ".join(p for p in parts if p)[:300]
+
+
+def _scrub(text, secrets=()):
+    """Remove credentials from a whole message (before it is shortened, so no prefix of one survives)."""
+    text = re.sub(r"(?i)\b(bearer|basic)\s+\S+", r"\1 ***", text)
+    for s in secrets:
+        if s and len(s) >= 6:
+            text = text.replace(s, "***")
+    return text
+
+
 class EbayAdapter(Adapter):
     name = "ebay"
 
@@ -104,7 +147,20 @@ class EbayAdapter(Adapter):
         self.markets = self.settings.get("markets") or ["EBAY_DE"]
         if not (self.settings.get("keywords") or sc.get("keywords")):
             raise ConfigError("the Browse API needs search terms: set keywords for the search or ebay.keywords")
+        kc = self.settings.get("keyword_categories") or {}
+        if not isinstance(kc, dict):
+            raise ConfigError("ebay.keyword_categories must be a mapping {search term: category id(s)}")
+        terms = {_term(k) for k in (self.settings.get("keywords") or sc.get("keywords") or [])}
+        unknown = [k for k in kc if _term(k) not in terms]
+        if unknown:
+            raise ConfigError(f"ebay.keyword_categories: not a configured search term: {', '.join(map(str, unknown))}")
+        self.keyword_categories = {_term(k): _ids(v) for k, v in kc.items()}
+        empty = [k for k in kc if not self.keyword_categories[_term(k)]]
+        if empty:
+            raise ConfigError(f"ebay.keyword_categories: no category id for: {', '.join(map(str, empty))}")
+        self.category_ids = _ids(self.settings.get("category_ids"))
         self.token, self.expires = None, 0
+        self.last_error = ""
         self._ids = {}     # legacy id -> (RESTful item id, market) for details()
 
     # ------------------------------------------------------------------ HTTP
@@ -153,6 +209,8 @@ class EbayAdapter(Adapter):
                 if e.code >= 500 and attempt < 2:
                     time.sleep(10)
                     continue
+                basic = base64.b64encode(f"{self.cid}:{self.secret}".encode()).decode()
+                self.last_error = _error_text(e, (self.token, self.cid, self.secret, basic))
                 return None, e.code
             except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
                 if attempt < 2:
@@ -176,23 +234,42 @@ class EbayAdapter(Adapter):
         kw = query.get("keyword")
         if not kw:
             return []   # the Browse API needs a query; configure keywords
-        out = []
+        out, failed, done = [], [], 0
+        cats = self.categories(kw) or [None]
         for market in self.markets:
-            params = {"q": kw, "limit": int(self.settings.get("limit", 50)), "sort": "newlyListed",
-                      "filter": ",".join(parts)}
-            if self.settings.get("category_ids"):
-                params["category_ids"] = self.settings["category_ids"]
-            d, st = self._get("/buy/browse/v1/item_summary/search", params, market)
-            if d is None and st not in (200, 404):
-                raise RuntimeError(f"eBay search '{kw}' ({market}): HTTP {st}")
-            for s in (d or {}).get("itemSummaries") or []:
-                li = to_listing(s, market)
-                if not li["source_id"] or li["price"] is None or not li["title"]:
+            for cat in cats:
+                params = {"q": kw, "limit": int(self.settings.get("limit", 50)), "sort": "newlyListed",
+                          "filter": ",".join(parts)}
+                if cat:
+                    params["category_ids"] = cat
+                self.last_error = ""
+                d, st = self._get("/buy/browse/v1/item_summary/search", params, market)
+                if d is None and st not in (200, 404):
+                    where = market + (f", category {cat}" if cat else "")
+                    failed.append(f"{where}: HTTP {st}" + (f" ({self.last_error})" if self.last_error else ""))
                     continue
-                if li["auction"] and not self.settings.get("include_auctions"):
-                    continue
-                self._ids[li["source_id"]] = (li.pop("_item_id"), li.pop("_market"))
-                out.append(li)
+                done += 1
+                out += self._summaries(d, market)
+        if failed and not done:
+            raise RuntimeError(f"eBay search '{kw}': " + "; ".join(failed))
+        if failed:
+            self.warnings.append(f"eBay search '{kw}' partly failed, skipped: " + "; ".join(failed))
+        return out
+
+    def categories(self, kw):
+        """Category ids for a search term: keyword_categories, else category_ids (one request each)."""
+        return self.keyword_categories.get(_term(kw)) or self.category_ids
+
+    def _summaries(self, d, market):
+        out = []
+        for s in (d or {}).get("itemSummaries") or []:
+            li = to_listing(s, market)
+            if not li["source_id"] or li["price"] is None or not li["title"]:
+                continue
+            if li["auction"] and not self.settings.get("include_auctions"):
+                continue
+            self._ids[li["source_id"]] = (li.pop("_item_id"), li.pop("_market"))
+            out.append(li)
         return out
 
     def check(self, source_id):
@@ -271,6 +348,9 @@ def probe(argv=None):
         ad.markets = [m]
         res = ad.search({"keyword": a.keyword})
         print(f"{m} '{a.keyword}': {len(res)} items")
+        for w in ad.warnings:
+            print(f"  warning: {w}")
+        ad.warnings.clear()
         for li in res:
             print(f"  {li['source_id']}  {li['price']} + {li['shipping_cost']} shipping  {li['title'][:60]}  "
                   f"| {li['condition']} | {li['location']}")

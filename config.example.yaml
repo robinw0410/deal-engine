@@ -56,6 +56,8 @@ searches:
       conditions: [3000, 7000]         # used, for parts / not working
       limit: 50
       include_auctions: false
+      # category_ids: "139971"         # one request per id and marketplace (the API takes one id per request)
+      # keyword_categories: {"switch oled": 139971}   # per search term, overrides category_ids
       keywords: ["ps5 defective", "switch oled", "dualsense", "steam deck", "thinkpad t480"]
     keywords: []                       # empty = one query for everything the adapter delivers
 

@@ -53,7 +53,7 @@ there `deal_engine` is importable without installing it.
 **As a package**, from a release tag:
 
 ```sh
-pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.9"
+pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.10"
 ```
 
 This installs the `deal_engine` package including the built-in prompts and the deal list page.
@@ -650,6 +650,16 @@ description, images, item aspects) and no user data (no seller name, user id or 
 Without `EBAY_CLIENT_ID`/`EBAY_CLIENT_SECRET` the run reports a configuration error for the eBay
 adapter (`failed`, reason `config_error`, exit code 2); nothing falls back to another source.
 Other adapters of the same search still run.
+
+Categories: the Browse API takes **one** category id per request. `ebay.category_ids` may name several
+(`"11484,57989"` or a list); the adapter then sends one request per id and marketplace. With
+`ebay.keyword_categories: {"cordhose herren": 57989, "brogue herren": [53120, 24087]}` each search term
+gets its own ids (a term not listed, e.g. a market-group query, uses `category_ids`; a key that is
+not a configured term or has no id is a `ConfigError`). Every id is one more call per term and marketplace, so count them against the daily
+limit of your key. A request that fails (HTTP 4xx, or 5xx after retries) is skipped: the error text
+eBay returns (`errorId`, message; shortened, without credentials) goes into the run's problems and the
+run status becomes `partial`; the term only fails if all its requests failed, and the other terms run
+anyway. HTTP 429 still stops the adapter (`Blocked`).
 
 Live check (writes nothing; credentials only from the environment):
 

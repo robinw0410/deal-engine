@@ -16,6 +16,9 @@ adapter stops and the problem is reported. Raise ConfigError (deal_engine.core.c
 __init__ when the adapter cannot run with the configuration (missing credentials, missing
 settings); it never falls back to anything else.
 
+An adapter can append short messages to self.warnings when part of a search failed but the rest
+is usable (e.g. one of several requests); the pipeline reports them as problems of the run and goes on.
+
 Settings of an adapter live in the search config under its name (sc[self.name]); the generic
 key max_new_per_run there overrides the search's max_new_per_run for this adapter.
 
@@ -41,6 +44,7 @@ class Adapter:
         self.sc = sc
         self.settings = sc.get(self.name) or {}
         self.requests = 0
+        self.warnings = []      # partial failures, reported by the pipeline as problems
 
     def search(self, query):
         """query: {"keyword": str or None, "min_price": number or None, "max_price": number or None}.
