@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.11 – 2026-11-03
+
+### Fixed
+
+- **Deal list navigation led to the site root**: the deal list linked "Search pages" to `../` and
+  itself to `./`. Behind a reverse proxy whose `/` is another site, "Search pages" led nowhere. The deal
+  list now has the navigation of the search pages: one link per search of the config (`../<slug>/`,
+  title, config order), then the deal list (`../deals/`, active). No link points to the site root any more.
+  Without searches in the config the navigation is the deal list alone; broken `web` settings of a search
+  leave the deal list usable (deal-list link only, reason on stderr). The text `nav.pages` is gone.
+
+### Added
+
+- **`render.nav_links(cfg, active, loc)` / `render.nav_html(…)`**: the shared navigation of the search
+  pages and the deal list (`active`: a search name or `render.DEALS`). The deal-list link appears unless
+  `deals.enabled: false` (on the deal list itself always). Search pages are unchanged apart from the
+  deal-list link now having an (empty) `class` like the other links.
+
 ## 0.2.10 – 2026-10-29
 
 ### Fixed

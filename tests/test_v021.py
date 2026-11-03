@@ -34,7 +34,7 @@ def test_text_tables_have_identical_keys():
 
 def test_page_uses_only_known_keys():
     page = deals_server.PAGE.read_text()
-    keys = set(re.findall(r"\{\{([\w. ]+)\}\}", page)) - {"lang", "texts"}
+    keys = set(re.findall(r"\{\{([\w. ]+)\}\}", page)) - {"lang", "texts", "nav"}
     js = set(re.findall(r'\bth?\("([\w. ]+)"', page))
     assert keys and js and not (keys | js) - set(texts.EN)
 

@@ -312,16 +312,33 @@ def prompt_block(cfg, loc=None):
 
 
 # ---------------------------------------------------------------------------- page
+def nav(cfg=None):
+    """The site navigation of the search pages (deal_engine.web.render.nav_html) with the deal list
+    active: one link per search of the config, then the deal list. A config whose web settings are
+    broken still gets the deal list (only the deal-list link, reason on stderr)."""
+    from ..core.config import ConfigError
+    from ..web import render
+    cfg = cfg or CFG or {}
+    try:
+        return render.nav_html(cfg, render.DEALS)
+    except ConfigError as e:
+        print(f"deals: navigation without search pages: {e}", file=sys.stderr)
+        return render.nav_html({"locale": cfg.get("locale")}, render.DEALS)
+
+
 def render_page(cfg=None):
-    """deals.html with the texts of the config locale: {{key}} placeholders (escaped), {{lang}} and
-    {{texts}} (the whole table as JSON for the page script)."""
-    code = (cfg or CFG or {}).get("locale") or "en"
+    """deals.html with the texts of the config locale: {{key}} placeholders (escaped), {{lang}},
+    {{nav}} (site navigation, see nav()) and {{texts}} (the whole table as JSON for the page script)."""
+    cfg = cfg or CFG or {}
+    code = cfg.get("locale") or "en"
     T = texts_mod.get(code)
 
     def sub(m):
         k = m.group(1)
         if k == "lang":
             return html.escape(code)
+        if k == "nav":
+            return nav(cfg)
         if k == "texts":
             return json.dumps(T, ensure_ascii=False).replace("</", "<\\/")
         return html.escape(T[k])

@@ -53,7 +53,7 @@ there `deal_engine` is importable without installing it.
 **As a package**, from a release tag:
 
 ```sh
-pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.10"
+pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.11"
 ```
 
 This installs the `deal_engine` package including the built-in prompts and the deal list page.
@@ -588,6 +588,15 @@ motorbikes:
     toggles:
       - {key: a2, label: A2 license, field: ps, max: 48}
 ```
+
+Navigation: every search page and the deal list carry the same navigation, built from the
+config: one link per search (`../<slug>/`, its `title`, in config order), then the deal list
+(`../deals/`; left out on the search pages with `deals.enabled: false`); the current page is
+marked active. The links are relative, so the pages work under any common path prefix of a
+reverse proxy; nothing links to the site root (`render.nav_links` / `render.nav_html` for own pages).
+The deal server reads the pages from its `--config`; without searches its navigation is the deal
+list alone. A search page shows the searches of the config it was rendered with, so after adding
+a search the other pages get the new link on their next render (`python -m deal_engine render`).
 
 ### Score hooks
 

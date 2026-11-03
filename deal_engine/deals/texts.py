@@ -11,7 +11,7 @@ Unknown keys fall back to English.
 
 EN = {
     "num.locale": "en",
-    "title": "Deals & Parts", "nav.pages": "Search pages", "nav.deals": "Deals",
+    "title": "Deals & Parts", "nav.deals": "Deals",
     "head.formula": "Profit = sale − purchase − parts − other costs",
     "tab.overview": "Overview", "tab.deals": "Deals", "tab.stock": "Parts",
     "status.bought": "bought", "status.in progress": "in progress", "status.listed": "listed",
@@ -81,7 +81,7 @@ EN = {
 
 DE = {
     "num.locale": "de-DE",
-    "title": "Deals & Teile", "nav.pages": "Suchseiten", "nav.deals": "Deals",
+    "title": "Deals & Teile", "nav.deals": "Deals",
     "head.formula": "Gewinn = Verkauf − Kauf − Teile − sonstige Kosten",
     "tab.overview": "Übersicht", "tab.deals": "Deals", "tab.stock": "Teile",
     "status.bought": "gekauft", "status.in progress": "in Arbeit", "status.listed": "inseriert",
