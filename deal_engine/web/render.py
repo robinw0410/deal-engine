@@ -340,6 +340,32 @@ def cfg_for(name, sc=None, cfg=None):
     return page
 
 
+DEALS = "deals"   # active= value of site_nav for the deal list
+
+
+def nav_links(cfg, active=None, loc=None):
+    """The site navigation shared by the search pages and the deal list: one link per search of the
+    config (searches.<name>.web.slug / title, in config order), then the deal list (unless
+    deals.enabled is false; always on the deal list itself). Returns [(href, label, is_active)].
+    Links are relative to a page at /<slug>/ or /deals/ (../<slug>/, ../deals/), so the pages work
+    under any common prefix; nothing links to the site root. active: a search name or DEALS."""
+    cfg = cfg or {}
+    loc = loc or locale_mod.get(cfg.get("locale"))
+    out = []
+    for n in config_mod.search_names(cfg):
+        p = cfg_for(n, config_mod.search(cfg, n), cfg)
+        out.append((f"../{p['slug']}/", p["title"], n == active))
+    if active == DEALS or (cfg.get("deals") or {}).get("enabled", True):
+        out.append(("../deals/", ui(loc, "nav.deals"), active == DEALS))
+    return out
+
+
+def nav_html(cfg, active=None, loc=None):
+    """nav_links as <a> elements (escaped) for a <nav>."""
+    return "".join(f'<a href="{esc(h)}" class="{"active" if a else ""}">{esc(lbl)}</a>'
+                   for h, lbl, a in nav_links(cfg, active, loc))
+
+
 def host_of(url):
     return re.sub(r"^https?://(www\.)?", "", url).split("/")[0]
 
@@ -799,11 +825,7 @@ def render(cfg, name, log=print):
     }
     sort_opts = "".join(f'<option value="{sort_key(f)}" data-desc="{1 if d else 0}">{esc(lbl)}</option>'
                         for lbl, f, d in page["sorts"])
-    pages = {n: cfg_for(n, config_mod.search(cfg, n), cfg) for n in config_mod.search_names(cfg)}
-    nav = "".join(f'<a href="../{esc(p["slug"])}/" class="{"active" if n == name else ""}">{esc(p["title"])}</a>'
-                  for n, p in pages.items())
-    if (cfg.get("deals") or {}).get("enabled", True):
-        nav += f'<a href="../deals/">{t("nav.deals")}</a>'
+    nav = nav_html(cfg, name, loc)
 
     html_page = f"""<!doctype html><html lang="{esc(loc.code)}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
