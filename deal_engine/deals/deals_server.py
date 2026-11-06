@@ -544,6 +544,7 @@ class H(BaseHTTPRequestHandler):
                 "platforms": form.get("platforms") or [], "active": "active" in form, "note": one("note")}
         if action == "update":   # terms_updated the edit form was rendered with (stale-form check)
             body["terms_seen"] = one("terms_seen")
+            body["terms_shown"] = one("terms_shown")
         T = texts_mod.get(CFG.get("locale"))
         try:
             with LOCK:

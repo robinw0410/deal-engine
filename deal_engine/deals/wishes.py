@@ -20,6 +20,7 @@ keywords), bounded lengths.
 """
 import json
 import re
+import unicodedata
 import sqlite3
 import time
 
@@ -51,7 +52,7 @@ CREATE TABLE IF NOT EXISTS wish(
 COLUMNS = {"terms_source": "TEXT NOT NULL DEFAULT 'user'", "terms_updated": "TEXT",
            "terms_regen": "INTEGER NOT NULL DEFAULT 0"}
 # characters with a meaning in regular expressions or search syntax: not allowed in suggested terms
-_SYNTAX = re.compile(r"[\\^$*+?()\[\]{}|<>`]")
+_SYNTAX = re.compile(r"[\\^$*+?()\[\]{}|<>`\"]|^[-+~!]|\s[-+~!]\S|\b(?:OR|AND|NOT)\b")
 
 _CTRL = re.compile(r"[\x00-\x1f\x7f]")
 
@@ -170,9 +171,10 @@ def create(con, body, cfg=None):
 
 
 def update(con, wish_id, body, cfg=None):
-    """Change a wish. body may carry "terms_seen": the terms_updated the edit form was rendered with.
-    If suggested terms arrived after that (terms_source "ai", terms_updated differs) and the form sends
-    no terms, the suggestions are kept instead of being cleared by the stale form."""
+    """Change a wish. body may carry "terms_seen" (terms_updated the edit form was rendered with) and
+    "terms_shown" (the terms it showed, JSON list). If the terms changed since then (e.g. suggestions
+    arrived) and the form sends the terms it showed unchanged (or none, without terms_shown), the
+    current terms are kept: a stale form never replaces new suggestions or turns them into user terms."""
     init(con)
     # take the write lock before reading, so set_ai_terms cannot slip in between read and write
     con.execute("UPDATE wish SET id=id WHERE id=?", (int(wish_id),))
@@ -184,10 +186,20 @@ def update(con, wish_id, body, cfg=None):
     old = _row(row)
     body = dict(body)
     seen = body.pop("terms_seen", None)
-    if (seen is not None and old["terms_source"] == "ai" and old["terms"] and str(seen) != (old["terms_updated"] or "")
-            and not [t for t in (body.get("terms") or []) if str(t).strip()]
-            and not (isinstance(body.get("terms"), str) and body["terms"].strip())):
-        body["terms"] = old["terms"]   # stale form: suggestions arrived after it was opened
+    shown = body.pop("terms_shown", None)
+    if seen is not None and str(seen) != (old["terms_updated"] or "") and "terms" in body:
+        # the terms changed since the form was rendered (e.g. suggestions arrived): keep the current
+        # ones unless the user visibly edited the terms in the form
+        if isinstance(shown, str):
+            try:
+                shown = json.loads(shown) if shown.strip() else []
+            except ValueError:
+                shown = None
+        sent = body["terms"].replace(";", "\n").replace(",", "\n").splitlines() \
+            if isinstance(body["terms"], str) else body["terms"]
+        norm = lambda ts: [str(t).strip().casefold() for t in (ts or []) if str(t).strip()]
+        if (shown is not None and norm(sent) == norm(shown)) or (shown is None and not norm(sent)):
+            body["terms"] = old["terms"]
     w = validate(dict(old, **body), cfg)
     if w["active"] and not row["active"]:
         _check_active(con, int(wish_id))
@@ -220,16 +232,19 @@ def clean_ai_terms(terms):
             t = _text(t, "term", MAX_TERM, required=False)
         except ValueError:
             continue
+        t = "".join(c for c in t if unicodedata.category(c) != "Cf")   # bidi / zero-width
         if t and not _SYNTAX.search(t) and t.casefold() not in seen:
             seen.add(t.casefold())
             out.append(t)
     return out[:MAX_TERMS]
 
 
-def set_ai_terms(cfg, wish_id, terms):
+def set_ai_terms(cfg, wish_id, terms, expect=None):
     """Store suggested terms for a wish (terms_source "ai", terms_updated now, terms_regen cleared).
     Checked in one transaction: only if the wish has no terms or new suggestions were requested, so
-    terms the user entered or changed meanwhile are never overwritten. Returns True if stored."""
+    terms the user entered or changed meanwhile are never overwritten. expect: {"name", "note"} of the
+    wish the terms were generated for; if the user changed them meanwhile, nothing is stored (the wish
+    still needs terms and gets new ones in the next run). Returns True if stored."""
     from .deals_server import connect
     terms = clean_ai_terms(terms)
     if not terms:
@@ -243,6 +258,9 @@ def set_ai_terms(cfg, wish_id, terms):
             row = con.execute("SELECT * FROM wish WHERE id=?", (int(wish_id),)).fetchone()
             w = _row(row) if row else None
             ok = bool(w) and (not w["terms"] or w["terms_regen"])
+            # generated for the wish as it was read: name/note changed meanwhile -> do not store
+            if ok and expect:
+                ok = all(w.get(k) == v for k, v in expect.items() if k in ("name", "note"))
             if ok:
                 con.execute("UPDATE wish SET terms=?, terms_source='ai', terms_updated=?, terms_regen=0 WHERE id=?",
                             (json.dumps(terms, ensure_ascii=False), time.strftime("%Y-%m-%dT%H:%M:%S"), int(wish_id)))

@@ -288,3 +288,54 @@ def test_stale_edit_form_keeps_suggestions_that_arrived_later(tmp_path):
         wishes.update(con, i, {"terms": [], "terms_seen": w["terms_updated"]})
     assert wishes.rows(con)[0]["terms"] == []
     con.close()
+
+
+
+def test_stale_form_with_shown_terms_keeps_new_suggestions(tmp_path):
+    """Regen requested, form opened with T1, runner stores T2, user only changes the price."""
+    cfg = {"_data": tmp_path}
+    from deal_engine.deals.deals_server import connect
+    con = connect(cfg)
+    with con:
+        i = wishes.create(con, {"name": "Example camera", "terms": [], "max_price": 100, "platforms": ["ebay"]})
+    assert wishes.set_ai_terms(cfg, i, ["old one", "old two"])
+    with con:
+        wishes.request_regen(con, i)
+    w1 = wishes.rows(con)[0]
+    form = {"terms_seen": w1["terms_updated"], "terms_shown": json.dumps(w1["terms"])}
+    with con:   # T2 arrives later (distinct timestamp even within the same second)
+        con.execute("UPDATE wish SET terms_updated='2000-01-01T00:00:00' WHERE id=?", (i,))
+    form["terms_seen"] = "2000-01-01T00:00:00"
+    assert wishes.set_ai_terms(cfg, i, ["new one"])
+    with con:
+        wishes.update(con, i, dict(form, terms=["old one", "old two"], max_price=80))
+    w = wishes.rows(con)[0]
+    assert w["terms"] == ["new one"] and w["terms_source"] == "ai" and w["max_price"] == 80
+    with con:   # visibly edited terms in the stale form: the user's terms win
+        wishes.update(con, i, dict(form, terms=["my term"]))
+    assert wishes.rows(con)[0]["terms"] == ["my term"] and wishes.rows(con)[0]["terms_source"] == "user"
+    con.close()
+
+
+def test_set_ai_terms_refuses_when_wish_changed_meanwhile(tmp_path):
+    cfg = {"_data": tmp_path}
+    from deal_engine.deals.deals_server import connect
+    con = connect(cfg)
+    with con:
+        i = wishes.create(con, {"name": "Bicycle A", "terms": [], "max_price": 100, "platforms": ["ebay"]})
+    read = wishes.rows(con)[0]
+    with con:
+        wishes.update(con, i, {"name": "Camera Z"})
+    assert wishes.set_ai_terms(cfg, i, ["bicycle a"], expect={"name": read["name"], "note": read["note"]}) is False
+    assert wishes.needs_terms(wishes.rows(con)[0])
+    con.close()
+
+
+@pytest.mark.parametrize("bad", ['"exact phrase"', "-defekt camera", "camera OR phone", "camera -broken",
+                                 "+camera"])
+def test_clean_ai_terms_drops_search_operators(bad):
+    assert wishes.clean_ai_terms([bad]) == []
+
+
+def test_clean_ai_terms_strips_invisible_characters():
+    assert wishes.clean_ai_terms(["a\u202eb", "x\u200by"]) == ["ab", "xy"]

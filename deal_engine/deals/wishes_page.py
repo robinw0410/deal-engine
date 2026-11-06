@@ -10,6 +10,7 @@ id (digits only), `csrf` the token (see csrf.py). Search terms come as up to MAX
 platforms as checkboxes `platforms`, `active` as a checkbox (absent = inactive). Action `regen` (the
 "suggest terms again" button) only sets the wish's terms_regen flag.
 """
+import json
 import base64
 import hashlib
 import html
@@ -98,7 +99,8 @@ def form_values(form):
     one = lambda k: (form.get(k) or [""])[0]
     return {"id": one("id") if one("id").isdigit() else None, "name": one("name"), "terms": form.get("terms") or [],
             "max_price": one("max_price"), "platforms": form.get("platforms") or [],
-            "active": "active" in form, "note": one("note"), "terms_seen": one("terms_seen")}
+            "active": "active" in form, "note": one("note"), "terms_seen": one("terms_seen"),
+            "terms_shown": one("terms_shown")}
 
 
 def render(cfg, style, nav, token, rows, msg=None, msg_ok=True, values=None):
@@ -167,6 +169,7 @@ def render(cfg, style, nav, token, rows, msg=None, msg_ok=True, values=None):
             f'<input type="hidden" name="action" value="{"update" if editing else "create"}">'
             + (f'<input type="hidden" name="id" value="{int(v["id"])}">'
                f'<input type="hidden" name="terms_seen" value="{esc(v.get("terms_seen", v.get("terms_updated")) or "")}">'
+               f'<input type="hidden" name="terms_shown" value="{esc(v.get("terms_shown") or json.dumps(v.get("terms") or [], ensure_ascii=False))}">'
                if editing else "")
             + f'<h2 class="wide">{t("w.edit_title") if editing else t("w.new")}</h2>'
             f'<label class="wide">{t("w.f.name")}<input name="name" required maxlength="{wishes.MAX_NAME}" '
