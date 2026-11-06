@@ -7,6 +7,10 @@ market data of one search (deals.market_search in the config).
   python -m deal_engine.deals.deals_server [--config PATH] [--port N] [--web-root DIR] [--locale de]
   python -m deal_engine.deals.deals_server --prompt-block SEARCH    parts catalogue as a prompt section
 
+The wish list (/deals/wishes/, see wishes.py and wishes_page.py) is a server-rendered form page;
+its writes need a CSRF token (csrf.py). Every POST/PUT/DELETE that a browser marks as cross-site
+is refused (403), and JSON bodies must be exactly application/json.
+
 Binds to 127.0.0.1 only and has no authentication. Do not expose it to a network without
 putting authentication in front of it (e.g. a reverse proxy).
 With --web-root, the rendered search pages are served at / as well (handy for the demo).
@@ -22,7 +26,7 @@ import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from ..core import clock, history
 from ..core import locale as locale_mod
@@ -30,11 +34,16 @@ from ..core import config as config_mod
 from ..core.groups import match_group
 from ..core.market import settings as market_settings
 from ..core.util import load_json, median
+from . import csrf
 from . import texts as texts_mod
+from . import wishes
+from . import wishes_page
 
 PAGE = Path(__file__).resolve().parent / "deals.html"
 LOCK = threading.Lock()
 CFG = {}
+MAX_FORM = 16 * 1024    # bytes of a form body (wish list); more -> 413
+MAX_JSON = 50000        # bytes of a JSON body
 
 STATUSES = ("bought", "in progress", "listed", "sold", "scrapped")
 DEAL_FIELDS = {
@@ -94,7 +103,9 @@ def connect(cfg=None):
 def init(cfg=None):
     con = connect(cfg)
     con.executescript(SCHEMA)
+    wishes.init(con)
     con.close()
+    csrf.secret(cfg or CFG)   # state/deals-secret (0600) on first start
 
 
 def clean(body, fields, base=None, required="item"):
@@ -312,18 +323,21 @@ def prompt_block(cfg, loc=None):
 
 
 # ---------------------------------------------------------------------------- page
-def nav(cfg=None):
-    """The site navigation of the search pages (deal_engine.web.render.nav_html) with the deal list
+def nav(cfg=None, prefix=""):
+    """The site navigation of the search pages (deal_engine.web.render.nav_links) with the deal list
     active: one link per search of the config, then the deal list. A config whose web settings are
-    broken still gets the deal list (only the deal-list link, reason on stderr)."""
+    broken still gets the deal list (only the deal-list link, reason on stderr).
+    prefix: prepended to the (relative) links for pages below /deals/ (wish list: "../")."""
     from ..core.config import ConfigError
     from ..web import render
     cfg = cfg or CFG or {}
     try:
-        return render.nav_html(cfg, render.DEALS)
+        links = render.nav_links(cfg, render.DEALS)
     except ConfigError as e:
         print(f"deals: navigation without search pages: {e}", file=sys.stderr)
-        return render.nav_html({"locale": cfg.get("locale")}, render.DEALS)
+        links = render.nav_links({"locale": cfg.get("locale")}, render.DEALS)
+    return "".join(f'<a href="{render.esc(prefix + h)}" class="{"active" if a else ""}">{render.esc(lbl)}</a>'
+                   for h, lbl, a in links)
 
 
 def render_page(cfg=None):
@@ -345,6 +359,34 @@ def render_page(cfg=None):
     return re.sub(r"\{\{([\w. ]+)\}\}", sub, PAGE.read_text()).encode()
 
 
+def wish_style():
+    return wishes_page.css(PAGE.read_text())
+
+
+def wish_data(con):
+    """Response of the wish API: all wishes, limits, allowed platforms and a fresh CSRF token."""
+    return {"wishes": wishes.rows(con), "max_active": wishes.MAX_ACTIVE, "max_terms": wishes.MAX_TERMS,
+            "platforms": list(wishes.platforms(CFG)), "csrf": csrf.token(CFG)}
+
+
+def wish_page(msg=None, msg_ok=True, values=None, edit=None):
+    """The wish list page (bytes, CSP header value). edit: id of the wish to load into the form."""
+    con = connect()
+    try:
+        rows = wishes.rows(con)
+    finally:
+        con.close()
+    if edit is not None and values is None:
+        found = [w for w in rows if w["id"] == edit]
+        if found:
+            values = found[0]
+        else:
+            msg, msg_ok = texts_mod.get(CFG.get("locale"))["w.err.notfound"], False
+    style = wish_style()
+    page = wishes_page.render(CFG, style, nav(CFG, "../"), csrf.token(CFG), rows, msg, msg_ok, values)
+    return page.encode(), wishes_page.csp(style)
+
+
 # ---------------------------------------------------------------------------- HTTP
 class H(BaseHTTPRequestHandler):
     server_version = "deals"
@@ -353,14 +395,54 @@ class H(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
-    def send(self, code, obj=None, ctype="application/json", raw=None):
+    def send(self, code, obj=None, ctype="application/json", raw=None, headers=None):
         body = raw if raw is not None else json.dumps(obj, ensure_ascii=False).encode()
         self.send_response(code)
         self.send_header("Content-Type", ctype + ("; charset=utf-8" if ctype.startswith(("text/", "application/json")) else ""))
+        self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "same-origin")
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
+
+    def redirect(self, code, location):
+        self.send_response(code)
+        self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+
+    def ctype(self):
+        """Media type of the request body without parameters, lower case ("" if none)."""
+        return (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+
+    def length(self, limit):
+        """Content-Length of the request; ValueError if not a number or negative, OverflowError above limit."""
+        raw = (self.headers.get("Content-Length") or "0").strip()
+        if not raw.isdigit():
+            raise ValueError("invalid Content-Length")
+        n = int(raw)
+        if n > limit:
+            raise OverflowError("too large")
+        return n
+
+    def cross_site(self):
+        """True (and 403 sent) for a write request a browser sent from another site (csrf.same_origin)."""
+        if csrf.same_origin(self.headers):
+            return False
+        self.close_connection = True
+        if self.route() == "/wishes":
+            self.send(403, ctype="text/html", raw=self.wish_error("w.err.csrf"), headers=self.wish_csp())
+        else:
+            self.send(403, {"error": "cross-site request refused"})
+        return True
+
+    def csrf_ok(self, token):
+        return csrf.valid(CFG, token)
 
     def route(self):
         p = urlparse(self.path).path
@@ -386,22 +468,26 @@ class H(BaseHTTPRequestHandler):
         return self.send(200, ctype=ctype, raw=target.read_bytes())
 
     def body(self):
-        if "application/json" not in (self.headers.get("Content-Type") or ""):
+        # exact media type: a substring test let "text/plain; application/json" through, which a
+        # browser sends cross-site without a CORS preflight
+        if self.ctype() != "application/json":
             raise PermissionError("Content-Type must be application/json")
-        n = int(self.headers.get("Content-Length") or 0)
-        if n > 50000:
-            raise ValueError("too large")
+        try:
+            n = self.length(MAX_JSON)
+        except OverflowError:
+            raise ValueError("too large") from None
         return json.loads(self.rfile.read(n) or b"{}")
 
-    def tx(self, fn):
-        """Write access in one transaction; the response is the complete current data."""
+    def tx(self, fn, result=None):
+        """Write access in one transaction; the response is the complete current data
+        (all_data, or result(con) e.g. wish_data)."""
         try:
             with LOCK:
                 con = connect()
                 try:
                     with con:
                         fn(con)
-                    self.send(200, all_data(con))
+                    self.send(200, (result or all_data)(con))
                 finally:
                     con.close()
         except PermissionError as e:
@@ -411,10 +497,94 @@ class H(BaseHTTPRequestHandler):
         except KeyError:
             self.send(404, {"error": "entry not found"})
 
+    # ------------------------------------------------------------------ wish list (forms)
+    def wish_csp(self):
+        return {"Content-Security-Policy": wishes_page.csp(wish_style())}
+
+    def wish_error(self, key):
+        return wishes_page.error_page(CFG, wish_style(), nav(CFG, "../"),
+                                      texts_mod.get(CFG.get("locale"))[key]).encode()
+
+    def wish_get(self):
+        q = parse_qs(urlparse(self.path).query, max_num_fields=10)
+        T = texts_mod.get(CFG.get("locale"))
+        done = (q.get("done") or [""])[0]
+        msg = T["w.ok." + done] if done in wishes_page.OK else None
+        edit = (q.get("edit") or [""])[0]
+        page, policy = wish_page(msg, True, edit=int(edit) if edit.isdigit() and len(edit) < 10 else None)
+        self.send(200, ctype="text/html", raw=page, headers={"Content-Security-Policy": policy})
+
+    def wish_post(self):
+        """Form post to /deals/wishes/: CSRF token, then one action; 303 back to the list on success."""
+        def fail(code, key):
+            self.close_connection = True   # the body may be unread
+            self.send(code, ctype="text/html", raw=self.wish_error(key), headers=self.wish_csp())
+        if self.ctype() != "application/x-www-form-urlencoded":
+            return fail(415, "w.err.type")
+        try:
+            n = self.length(MAX_FORM)
+        except OverflowError:
+            return fail(413, "w.err.size")
+        except ValueError:
+            return fail(400, "w.err.type")
+        try:
+            form = parse_qs(self.rfile.read(n).decode("utf-8"), keep_blank_values=True, max_num_fields=50)
+        except (UnicodeDecodeError, ValueError):
+            return fail(400, "w.err.type")
+        if not self.csrf_ok((form.get("csrf") or [""])[0]):
+            return fail(403, "w.err.csrf")
+        action = (form.get("action") or [""])[0]
+        raw_id = (form.get("id") or [""])[0]
+        wid = int(raw_id) if raw_id.isdigit() and len(raw_id) < 10 else None
+        if action not in wishes_page.ACTIONS or (action != "create" and wid is None):
+            return fail(400, "w.err.type")
+        one = lambda k: (form.get(k) or [""])[0]
+        body = {"name": one("name"), "terms": form.get("terms") or [], "max_price": one("max_price"),
+                "platforms": form.get("platforms") or [], "active": "active" in form, "note": one("note")}
+        T = texts_mod.get(CFG.get("locale"))
+        try:
+            with LOCK:
+                con = connect()
+                try:
+                    with con:
+                        if action == "create":
+                            wishes.create(con, body, CFG)
+                        elif action == "update":
+                            wishes.update(con, wid, body, CFG)
+                        elif action in ("activate", "deactivate"):
+                            wishes.update(con, wid, {"active": action == "activate"}, CFG)
+                        else:
+                            wishes.delete(con, wid)
+                finally:
+                    con.close()
+        except KeyError:
+            page, policy = wish_page(T["w.err.notfound"], False)
+            return self.send(404, ctype="text/html", raw=page, headers={"Content-Security-Policy": policy})
+        except ValueError as e:
+            values = wishes_page.form_values(form) if action in ("create", "update") else None
+            page, policy = wish_page(T["w.err"].replace("{msg}", str(e)), False, values)
+            return self.send(400, ctype="text/html", raw=page, headers={"Content-Security-Policy": policy})
+        done = {"create": "created", "update": "updated", "activate": "activated",
+                "deactivate": "deactivated", "delete": "deleted"}[action]
+        return self.redirect(303, f"/deals/wishes/?done={done}")
+
+    def wish_api(self, fn):
+        """Write request of the wish API: X-CSRF-Token header, JSON body, response wish_data."""
+        if not self.csrf_ok(self.headers.get("X-CSRF-Token") or ""):
+            self.close_connection = True
+            return self.send(403, {"error": "missing or invalid X-CSRF-Token (GET /deals/api/wishes returns one)"})
+        return self.tx(fn, wish_data)
+
     def do_GET(self):
         r = self.route()
         if r is None:
             return self.static()
+        if r == "/wishes":
+            if not urlparse(self.path).path.endswith("/"):
+                return self.redirect(301, "/deals/wishes/")
+            return self.wish_get()
+        if r == "/api/wishes":
+            return self.tx(lambda con: None, wish_data)
         if r == "/":
             if not urlparse(self.path).path.endswith("/"):
                 self.send_response(301)
@@ -428,6 +598,12 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         r = self.route()
+        if self.cross_site():
+            return
+        if r == "/wishes":
+            return self.wish_post()
+        if r == "/api/wishes":
+            return self.wish_api(lambda con: wishes.create(con, self.body(), CFG))
         if r == "/api/deals":
             def add(con):
                 b = self.body()
@@ -460,6 +636,11 @@ class H(BaseHTTPRequestHandler):
 
     def do_PUT(self):
         r = self.route() or ""
+        if self.cross_site():
+            return
+        m = re.fullmatch(r"/api/wishes/(\d{1,9})", r)
+        if m:
+            return self.wish_api(lambda con: wishes.update(con, int(m.group(1)), self.body(), CFG))
         m = re.fullmatch(r"/api/deals/([0-9a-f]{12})", r)
         if m:
             def upd(con):
@@ -488,9 +669,14 @@ class H(BaseHTTPRequestHandler):
         self.send(404, {"error": "not found"})
 
     def do_DELETE(self):
-        if "application/json" not in (self.headers.get("Content-Type") or ""):
+        if self.cross_site():
+            return
+        if self.ctype() != "application/json":
             return self.send(415, {"error": "Content-Type must be application/json"})
         r = self.route() or ""
+        m = re.fullmatch(r"/api/wishes/(\d{1,9})", r)
+        if m:
+            return self.wish_api(lambda con: wishes.delete(con, int(m.group(1))))
         m = re.fullmatch(r"/api/deals/([0-9a-f]{12})", r)
         if m:
             def rm(con):

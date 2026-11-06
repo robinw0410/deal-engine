@@ -53,7 +53,7 @@ there `deal_engine` is importable without installing it.
 **As a package**, from a release tag:
 
 ```sh
-pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.12"
+pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.13"
 ```
 
 This installs the `deal_engine` package including the built-in prompts and the deal list page.
@@ -333,6 +333,27 @@ a quantity of at least 2 ("3 Stück", "5x"); model numbers like "X230" do not co
 stay. `parts` must be one of the four values and `part_regex` a valid
 regex, otherwise loading the search fails. Spare parts are not taken out of the market statistics
 by this setting (the locale's `market_exclude` and the group `min`/`max` do that).
+
+### Wish list
+
+The deal server has a wish list at `/deals/wishes/` (linked from the deal list): products someone is
+looking for, each with a name, 1–5 plain-text search terms, a maximum price including shipping, the
+platforms to search (`willhaben`, `ebay`, or `wishes.platforms` in the config), active yes/no and an
+optional note on what to look out for. At most 10 wishes are active at a time. The page works without
+JavaScript (plain HTML forms); the same data is available as JSON at `/deals/api/wishes`
+(GET; POST, `PUT /deals/api/wishes/<id>`, `DELETE /deals/api/wishes/<id>` with the header
+`X-CSRF-Token` from the GET response). Wishes live in `state/deals.db` of the data directory, not in
+the config.
+
+deal-engine does not search for wishes by itself. A host application reads the active ones with
+`deal_engine.deals.wishes.active(cfg)` (read-only, `[]` while the deal server has never run) and
+turns them into searches.
+
+Every write request to the deal server is refused with 403 when a browser marks it as coming from
+another site (`Sec-Fetch-Site`, or `Origin`/`Referer` not matching `Host`/`X-Forwarded-Host`); wish
+list writes also need a CSRF token, an HMAC with a random key the server creates on first start in
+`state/deals-secret` (mode 0600). The deal server still has no users of its own: put authentication
+in front of it.
 
 ## Extending deal-engine
 

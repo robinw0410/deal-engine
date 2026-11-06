@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.2.13 – 2026-11-06
+
+### Added
+
+- **Wish list on the deal server** (`/deals/wishes/`, linked from the deal list): products to look for
+  with name, 1–5 plain-text search terms, maximum price incl. shipping, platforms, active and a note.
+  Server-rendered HTML forms (no JavaScript, strict Content-Security-Policy, same navigation and styles
+  as the deal list, texts in en/de); after a change the page redirects (303) with a message, invalid
+  input is shown again with the error. At most 10 active wishes and 5 terms per wish, enforced on the
+  server (`deal_engine.deals.wishes`). JSON API at `/deals/api/wishes` (GET, POST, PUT/DELETE
+  `/<id>`). Stored in `state/deals.db` (table `wish`).
+- **`wishes.active(cfg)`**: the active wishes for a host application, read-only; `[]` without database.
+- **CSRF protection**: wish list writes need a token (hidden form field `csrf` or header
+  `X-CSRF-Token`): `<time>.<HMAC-SHA256>` with a random key created on first start in
+  `state/deals-secret` (mode 0600), valid for 24 h.
+
+### Fixed
+
+- **Write requests to the deal server could be sent from other sites**: the JSON check accepted any
+  `Content-Type` containing `application/json`, e.g. `text/plain; application/json`, which a browser
+  sends cross-site without a CORS preflight; together with the cookie / basic auth of a reverse proxy,
+  another web page could add deals, parts and purchases. The media type must now be exactly
+  `application/json`, and every POST/PUT/DELETE a browser marks as cross-site (`Sec-Fetch-Site` other
+  than `same-origin`, or an `Origin`/`Referer` whose host is neither `Host` nor `X-Forwarded-Host`) is
+  refused with 403. A negative `Content-Length` no longer blocks the request thread.
+- Responses of the deal server also carry `X-Frame-Options: DENY`, `Referrer-Policy: same-origin` and
+  `Content-Length`.
+
 ## 0.2.12 – 2026-11-04
 
 ### Fixed
