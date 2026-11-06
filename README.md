@@ -350,9 +350,10 @@ deal-engine does not search for wishes by itself. A host application reads the a
 turns them into searches.
 
 Every write request to the deal server is refused with 403 when a browser marks it as coming from
-another site (`Sec-Fetch-Site`, or `Origin`/`Referer` not matching `Host`/`X-Forwarded-Host`); wish
+another site (`Sec-Fetch-Site`, or `Origin`/`Referer` not matching `Host`, without port; `X-Forwarded-Host` only with
+`deals.trust_forwarded_host: true`); wish
 list writes also need a CSRF token, an HMAC with a random key the server creates on first start in
-`state/deals-secret` (mode 0600). The deal server still has no users of its own: put authentication
+`state/deals-secret` (mode 0400). The deal server still has no users of its own: put authentication
 in front of it.
 
 ## Extending deal-engine

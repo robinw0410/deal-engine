@@ -305,8 +305,8 @@ def test_cross_site_post_is_refused_even_with_token(srv, headers):
 @pytest.mark.parametrize("headers", [
     {"Sec-Fetch-Site": None},                                              # non-browser client
     {"Sec-Fetch-Site": None, "Origin": "http://127.0.0.1:{port}"},
-    {"Sec-Fetch-Site": None, "Origin": "https://deals.example", "X-Forwarded-Host": "deals.example"},
     {"Sec-Fetch-Site": None, "Referer": "http://127.0.0.1:{port}/deals/wishes/"},
+    {"Sec-Fetch-Site": None, "Origin": "http://127.0.0.1:8080"},   # port is not compared (proxy drops it)
 ])
 def test_same_origin_post_is_accepted(srv, headers):
     c, cfg = srv()
@@ -335,7 +335,7 @@ def test_wrong_form_encoding_and_bad_ids(srv):
 def test_secret_file_is_private_and_stable(srv, tmp_path):
     c, cfg = srv()
     p = csrf.secret_path(cfg)
-    assert p.exists() and stat.S_IMODE(os.stat(p).st_mode) == 0o600
+    assert p.exists() and stat.S_IMODE(os.stat(p).st_mode) == 0o400   # read-only: no overwrite without chmod
     first = p.read_text()
     tok = c.token()
     csrf._CACHE.clear()
@@ -343,7 +343,7 @@ def test_secret_file_is_private_and_stable(srv, tmp_path):
     os.chmod(p, 0o644)
     csrf._CACHE.clear()
     csrf.secret(cfg)
-    assert stat.S_IMODE(os.stat(p).st_mode) == 0o600
+    assert stat.S_IMODE(os.stat(p).st_mode) == 0o400
     assert first.strip() not in c.page() and first.strip() not in (tmp_path / "config.yaml").read_text()
 
 
@@ -420,3 +420,34 @@ def test_page_has_no_inline_handlers():
     page = wishes_page.render({}, style, "", "t.0", [{"id": 1, "name": "n", "terms": ["a"], "max_price": 5.0,
                                                        "platforms": ["ebay"], "active": True, "note": ""}])
     assert not re.search(r"\son\w+=", page) and "<script" not in page
+
+
+
+def test_forwarded_host_only_when_trusted():
+    h = {"Origin": "https://attacker.example", "X-Forwarded-Host": "attacker.example", "Host": "deals.example"}
+    assert csrf.same_origin(h) is False                      # client-set X-Forwarded-Host is ignored
+    assert csrf.same_origin(h, trust_forwarded_host=True) is True
+    assert csrf.same_origin({"Origin": "https://Deals.Example:443", "Host": "deals.example"}) is True
+
+
+def test_secret_symlink_not_followed(tmp_path):
+    target = tmp_path / "elsewhere"
+    target.write_text("00" * 32)
+    cfg = {"_data": tmp_path / "data"}
+    csrf.secret_path(cfg).parent.mkdir(parents=True)
+    csrf.secret_path(cfg).symlink_to(target)
+    csrf._CACHE.clear()
+    with pytest.raises(OSError):
+        csrf.secret(cfg)
+
+
+def test_price_rounded_before_check_and_update_needs_object():
+    with pytest.raises(ValueError):
+        wishes.validate({"name": "x", "terms": ["a"], "max_price": "0.001", "platforms": ["ebay"]})
+    import sqlite3
+    con = sqlite3.connect(":memory:")
+    con.row_factory = sqlite3.Row
+    i = wishes.create(con, {"name": "x", "terms": ["a"], "max_price": 5, "platforms": ["ebay"]})
+    for bad in ([1, 2], "x"):
+        with pytest.raises(ValueError):
+            wishes.update(con, i, bad)

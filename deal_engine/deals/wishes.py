@@ -86,6 +86,7 @@ def validate(body, cfg=None):
         price = float(str(body.get("max_price", "")).replace(",", ".").replace("€", "").strip())
     except ValueError:
         raise ValueError("max_price: number expected") from None
+    price = round(price, 2) if price == price else price   # round first, then check (0.001 -> 0)
     if price != price or not 0 < price <= MAX_PRICE:   # NaN, <= 0, too large
         raise ValueError(f"max_price: between 0 and {MAX_PRICE:.0f}")
     allowed = platforms(cfg)
@@ -147,6 +148,8 @@ def update(con, wish_id, body, cfg=None):
     row = con.execute("SELECT * FROM wish WHERE id=?", (int(wish_id),)).fetchone()
     if not row:
         raise KeyError(wish_id)
+    if not isinstance(body, dict):
+        raise ValueError("object expected")
     w = validate(dict(_row(row), **body), cfg)
     if w["active"] and not row["active"]:
         _check_active(con, int(wish_id))

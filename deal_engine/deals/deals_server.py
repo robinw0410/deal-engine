@@ -105,7 +105,7 @@ def init(cfg=None):
     con.executescript(SCHEMA)
     wishes.init(con)
     con.close()
-    csrf.secret(cfg or CFG)   # state/deals-secret (0600) on first start
+    csrf.secret(cfg or CFG)   # state/deals-secret (0400) on first start
 
 
 def clean(body, fields, base=None, required="item"):
@@ -432,7 +432,7 @@ class H(BaseHTTPRequestHandler):
 
     def cross_site(self):
         """True (and 403 sent) for a write request a browser sent from another site (csrf.same_origin)."""
-        if csrf.same_origin(self.headers):
+        if csrf.same_origin(self.headers, bool((CFG.get("deals") or {}).get("trust_forwarded_host"))):
             return False
         self.close_connection = True
         if self.route() == "/wishes":

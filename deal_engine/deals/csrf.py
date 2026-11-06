@@ -7,11 +7,12 @@ write request needs proof that it comes from our own page:
 * token: "<unix time>.<HMAC-SHA256(secret, 'deals-csrf:' + time)>", embedded in our forms (hidden
   field `csrf`) and returned by GET /api/wishes (send it back as header X-CSRF-Token). Valid for
   MAX_AGE seconds; compared with hmac.compare_digest. Another site cannot read it (same-origin policy).
-* secret: 32 random bytes, created on first use in state/deals-secret (mode 0600) of the data
+* secret: 32 random bytes, created on first use in state/deals-secret (mode 0400, symlinks not followed) of the data
   directory; never in code or config. Deleting the file invalidates all tokens.
 * origin: `same_origin(headers)` rejects requests a browser marks as cross-site (Sec-Fetch-Site other
   than same-origin) and, for browsers without Sec-Fetch-*, an Origin / Referer whose host is not the
-  Host / X-Forwarded-Host of the request. Requests without these headers (non-browser clients) pass.
+  Host of the request (without port; X-Forwarded-Host only if trusted). Requests without these
+  headers (non-browser clients) pass.
 """
 import hashlib
 import hmac
@@ -32,7 +33,9 @@ def secret_path(cfg):
 
 
 def secret(cfg):
-    """The server secret (bytes); created with mode 0600 on first use."""
+    """The server secret (bytes); created read-only (0400) on first use, so a process without a shell
+    (e.g. an LLM evaluator with a file-write tool running as the same user) cannot overwrite it.
+    Symlinks are not followed."""
     p = secret_path(cfg)
     key = str(p)
     with _LOCK:
@@ -40,11 +43,13 @@ def secret(cfg):
             return _CACHE[key]
         p.parent.mkdir(parents=True, exist_ok=True)
         try:
-            fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o400)
         except FileExistsError:
-            if os.stat(p).st_mode & 0o077:
-                os.chmod(p, 0o600)
-            value = bytes.fromhex(p.read_text().strip())
+            fd = os.open(p, os.O_RDONLY | os.O_NOFOLLOW)
+            with os.fdopen(fd) as f:
+                if os.fstat(f.fileno()).st_mode & 0o277:
+                    os.fchmod(f.fileno(), 0o400)
+                value = bytes.fromhex(f.read().strip())
             if len(value) < 32:
                 raise RuntimeError(f"{p}: secret too short; delete the file to create a new one")
         else:
@@ -77,16 +82,25 @@ def valid(cfg, tok, now=None):
 
 
 def _host(h):
-    return (h or "").strip().lower()
+    """Host name without port, lower case ("Example.org:8080" -> "example.org")."""
+    h = (h or "").strip().lower()
+    try:
+        return urlsplit("//" + h).hostname or ""
+    except ValueError:
+        return ""
 
 
-def same_origin(headers):
-    """False for a request a browser sent from another site (see module docstring)."""
+def same_origin(headers, trust_forwarded_host=False):
+    """False for a request a browser sent from another site (see module docstring). Without
+    Sec-Fetch-Site the host of Origin (or Referer) must match Host, compared without port (a proxy
+    often drops it). X-Forwarded-Host counts only with trust_forwarded_host (deals.trust_forwarded_host),
+    because a proxy that does not set it passes a client's value through."""
     site = headers.get("Sec-Fetch-Site")
     if site is not None:
         return site.strip().lower() == "same-origin"
     hosts = {_host(headers.get("Host"))}
-    hosts |= {_host(x) for x in (headers.get("X-Forwarded-Host") or "").split(",")}
+    if trust_forwarded_host:
+        hosts |= {_host(x) for x in (headers.get("X-Forwarded-Host") or "").split(",")}
     hosts.discard("")
     origin = headers.get("Origin")
     if origin is not None:

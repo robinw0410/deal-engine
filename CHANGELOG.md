@@ -14,7 +14,8 @@
 - **`wishes.active(cfg)`**: the active wishes for a host application, read-only; `[]` without database.
 - **CSRF protection**: wish list writes need a token (hidden form field `csrf` or header
   `X-CSRF-Token`): `<time>.<HMAC-SHA256>` with a random key created on first start in
-  `state/deals-secret` (mode 0600), valid for 24 h.
+  `state/deals-secret` (mode 0400, so a process without a shell, e.g. an LLM evaluator with a
+  file-write tool, cannot overwrite it; symlinks are not followed), valid for 24 h.
 
 ### Fixed
 
@@ -23,8 +24,8 @@
   sends cross-site without a CORS preflight; together with the cookie / basic auth of a reverse proxy,
   another web page could add deals, parts and purchases. The media type must now be exactly
   `application/json`, and every POST/PUT/DELETE a browser marks as cross-site (`Sec-Fetch-Site` other
-  than `same-origin`, or an `Origin`/`Referer` whose host is neither `Host` nor `X-Forwarded-Host`) is
-  refused with 403. A negative `Content-Length` no longer blocks the request thread.
+  than `same-origin`, or an `Origin`/`Referer` whose host differs from `Host`, compared without port;
+  `X-Forwarded-Host` only with `deals.trust_forwarded_host: true`) is refused with 403. A negative `Content-Length` no longer blocks the request thread.
 - Responses of the deal server also carry `X-Frame-Options: DENY`, `Referrer-Policy: same-origin` and
   `Content-Length`.
 
