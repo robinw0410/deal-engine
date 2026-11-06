@@ -8,8 +8,9 @@ market data of one search (deals.market_search in the config).
   python -m deal_engine.deals.deals_server --prompt-block SEARCH    parts catalogue as a prompt section
 
 The wish list (/deals/wishes/, see wishes.py and wishes_page.py) is a server-rendered form page;
-its writes need a CSRF token (csrf.py). Every POST/PUT/DELETE that a browser marks as cross-site
-is refused (403), and JSON bodies must be exactly application/json.
+its writes need a CSRF token (csrf.py). Search terms are optional; the deal server never calls a
+model: a host application stores suggested terms with wishes.set_ai_terms. Every POST/PUT/DELETE
+that a browser marks as cross-site is refused (403), and JSON bodies must be exactly application/json.
 
 Binds to 127.0.0.1 only and has no authentication. Do not expose it to a network without
 putting authentication in front of it (e.g. a reverse proxy).
@@ -541,6 +542,8 @@ class H(BaseHTTPRequestHandler):
         one = lambda k: (form.get(k) or [""])[0]
         body = {"name": one("name"), "terms": form.get("terms") or [], "max_price": one("max_price"),
                 "platforms": form.get("platforms") or [], "active": "active" in form, "note": one("note")}
+        if action == "update":   # terms_updated the edit form was rendered with (stale-form check)
+            body["terms_seen"] = one("terms_seen")
         T = texts_mod.get(CFG.get("locale"))
         try:
             with LOCK:
@@ -553,6 +556,8 @@ class H(BaseHTTPRequestHandler):
                             wishes.update(con, wid, body, CFG)
                         elif action in ("activate", "deactivate"):
                             wishes.update(con, wid, {"active": action == "activate"}, CFG)
+                        elif action == "regen":
+                            wishes.request_regen(con, wid)
                         else:
                             wishes.delete(con, wid)
                 finally:
@@ -565,7 +570,7 @@ class H(BaseHTTPRequestHandler):
             page, policy = wish_page(T["w.err"].replace("{msg}", str(e)), False, values)
             return self.send(400, ctype="text/html", raw=page, headers={"Content-Security-Policy": policy})
         done = {"create": "created", "update": "updated", "activate": "activated",
-                "deactivate": "deactivated", "delete": "deleted"}[action]
+                "deactivate": "deactivated", "delete": "deleted", "regen": "regen"}[action]
         return self.redirect(303, f"/deals/wishes/?done={done}")
 
     def wish_api(self, fn):
@@ -604,6 +609,9 @@ class H(BaseHTTPRequestHandler):
             return self.wish_post()
         if r == "/api/wishes":
             return self.wish_api(lambda con: wishes.create(con, self.body(), CFG))
+        m = re.fullmatch(r"/api/wishes/(\d{1,9})/regen", r or "")
+        if m:   # "suggest terms again": body ignored (may be empty), but must be application/json
+            return self.wish_api(lambda con: (self.body(), wishes.request_regen(con, int(m.group(1)))))
         if r == "/api/deals":
             def add(con):
                 b = self.body()

@@ -49,7 +49,7 @@ def test_validate_cleans():
 
 @pytest.mark.parametrize("change, msg", [
     ({"name": ""}, "name"), ({"name": "x" * (wishes.MAX_NAME + 1)}, "name"), ({"name": 5}, "name"),
-    ({"terms": []}, "terms"), ({"terms": ["", " "]}, "terms"), ({"terms": "a,b,c,d,e,f"}, "terms"),
+    ({"terms": "a,b,c,d,e,f"}, "terms"),   # empty terms are allowed since 0.2.14 (test_v0214_wish_terms)
     ({"terms": ["t" * (wishes.MAX_TERM + 1)]}, "term"), ({"terms": [1]}, "term"), ({"terms": 3}, "terms"),
     ({"max_price": "nan"}, "max_price"), ({"max_price": "inf"}, "max_price"), ({"max_price": "-5"}, "max_price"),
     ({"max_price": "0"}, "max_price"), ({"max_price": "abc"}, "max_price"), ({"max_price": "1e9"}, "max_price"),

@@ -53,7 +53,7 @@ there `deal_engine` is importable without installing it.
 **As a package**, from a release tag:
 
 ```sh
-pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.13"
+pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.14"
 ```
 
 This installs the `deal_engine` package including the built-in prompts and the deal list page.
@@ -337,17 +337,29 @@ by this setting (the locale's `market_exclude` and the group `min`/`max` do that
 ### Wish list
 
 The deal server has a wish list at `/deals/wishes/` (linked from the deal list): products someone is
-looking for, each with a name, 1–5 plain-text search terms, a maximum price including shipping, the
+looking for, each with a name, up to 5 plain-text search terms (optional), a maximum price including shipping, the
 platforms to search (`willhaben`, `ebay`, or `wishes.platforms` in the config), active yes/no and an
 optional note on what to look out for. At most 10 wishes are active at a time. The page works without
 JavaScript (plain HTML forms); the same data is available as JSON at `/deals/api/wishes`
-(GET; POST, `PUT /deals/api/wishes/<id>`, `DELETE /deals/api/wishes/<id>` with the header
-`X-CSRF-Token` from the GET response). Wishes live in `state/deals.db` of the data directory, not in
+(GET; POST, `PUT /deals/api/wishes/<id>`, `DELETE /deals/api/wishes/<id>` and
+`POST /deals/api/wishes/<id>/regen` with the header `X-CSRF-Token` from the GET response). Wishes live in `state/deals.db` of the data directory, not in
 the config.
 
 deal-engine does not search for wishes by itself. A host application reads the active ones with
 `deal_engine.deals.wishes.active(cfg)` (read-only, `[]` while the deal server has never run) and
 turns them into searches.
+
+Search terms are optional. The deal server never calls a model itself: a wish without terms, or one
+whose "Suggest terms again" button was pressed (`terms_regen`), is marked "Suggestions pending", and
+the host application generates terms (e.g. with a model) and stores them with
+`wishes.set_ai_terms(cfg, wish_id, terms)`. That function cleans the terms (`wishes.clean_ai_terms`:
+plain text only, no regex or search syntax, at most 5) and writes them in one transaction only if the
+wish still has no terms or new suggestions were requested, so terms the user entered are never
+overwritten, also not when they were entered while the suggestions were being generated.
+`wishes.needs_terms(w)` tells which active wishes need suggestions. Each wish carries
+`terms_source` (`"user"` or `"ai"`), `terms_updated` and `terms_regen`; the page labels suggested
+terms "AI suggestion" with their time. Suggested terms stay editable: once changed in the form they
+are the user's own terms.
 
 Every write request to the deal server is refused with 403 when a browser marks it as coming from
 another site (`Sec-Fetch-Site`, or `Origin`/`Referer` not matching `Host`, without port; `X-Forwarded-Host` only with

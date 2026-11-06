@@ -5,8 +5,10 @@ base styles of deals.html plus a few rules of its own) and no inline style attri
 so it is served with a strict Content-Security-Policy (CSP below; the style block is allowed by hash).
 
 Forms post to the page itself (relative action "./"); field `action` is one of ACTIONS, `id` the wish
-id (digits only), `csrf` the token (see csrf.py). Search terms come as up to MAX_TERMS fields `terms`,
-platforms as checkboxes `platforms`, `active` as a checkbox (absent = inactive).
+id (digits only), `csrf` the token (see csrf.py). Search terms come as up to MAX_TERMS fields `terms`
+(all optional: a wish without terms gets suggestions from the host application, see wishes.py),
+platforms as checkboxes `platforms`, `active` as a checkbox (absent = inactive). Action `regen` (the
+"suggest terms again" button) only sets the wish's terms_regen flag.
 """
 import base64
 import hashlib
@@ -16,8 +18,8 @@ import re
 from . import texts as texts_mod
 from . import wishes
 
-ACTIONS = ("create", "update", "activate", "deactivate", "delete")
-OK = {"created", "updated", "activated", "deactivated", "deleted"}
+ACTIONS = ("create", "update", "activate", "deactivate", "delete", "regen")
+OK = {"created", "updated", "activated", "deactivated", "deleted", "regen"}
 PLATFORM_LABELS = {"ebay": "eBay"}
 
 EXTRA_CSS = """
@@ -29,6 +31,9 @@ EXTRA_CSS = """
 .wl tr.off td{opacity:.6}
 .terms{display:flex;gap:4px;flex-wrap:wrap}
 .terms span{background:var(--acc-soft);color:var(--acc);border-radius:999px;padding:1px 9px;font-size:.8rem}
+.tmeta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:4px;font-size:.75rem;color:var(--muted)}
+.tmeta .ai{background:var(--new-bg);color:var(--new)}.tmeta .pend{background:var(--unk-bg);color:var(--unk)}
+.fhint{font-size:.8rem;color:var(--muted);margin:4px 0 0}
 .s-on{background:var(--ok-bg);color:var(--ok)}.s-off{background:var(--line);color:var(--muted)}
 .msg{border-radius:10px;padding:9px 12px;margin:0 0 14px;font-size:.9rem}
 .msg.ok{background:var(--ok-bg);color:var(--ok)}.msg.bad{background:var(--bad-bg);color:var(--bad)}
@@ -79,6 +84,11 @@ def price_input(v):
     return str(v)
 
 
+def when(ts):
+    """ISO timestamp as "YYYY-MM-DD HH:MM"."""
+    return str(ts).replace("T", " ")[:16]
+
+
 def plat_label(p):
     return PLATFORM_LABELS.get(p, p)
 
@@ -88,7 +98,7 @@ def form_values(form):
     one = lambda k: (form.get(k) or [""])[0]
     return {"id": one("id") if one("id").isdigit() else None, "name": one("name"), "terms": form.get("terms") or [],
             "max_price": one("max_price"), "platforms": form.get("platforms") or [],
-            "active": "active" in form, "note": one("note")}
+            "active": "active" in form, "note": one("note"), "terms_seen": one("terms_seen")}
 
 
 def render(cfg, style, nav, token, rows, msg=None, msg_ok=True, values=None):
@@ -115,6 +125,14 @@ def render(cfg, style, nav, token, rows, msg=None, msg_ok=True, values=None):
     for w in rows:
         wid = int(w["id"])
         terms = "".join(f"<span>{esc(x)}</span>" for x in w["terms"])
+        meta = []
+        if w["terms"] and w.get("terms_source") == "ai":
+            meta.append(f'<span class="pill ai">{t("w.ai")}</span>')
+            if w.get("terms_updated"):
+                meta.append(f'<span>{esc(when(w["terms_updated"]))}</span>')
+        if not w["terms"] or w.get("terms_regen"):
+            meta.append(f'<span class="pill pend">{t("w.pending")}</span>')
+        meta = f'<div class="tmeta">{"".join(meta)}</div>' if meta else ""
         plats = ", ".join(esc(plat_label(p)) for p in w["platforms"])
         note = f'<div class="note">{esc(w["note"])}</div>' if w["note"] else ""
         state = (f'<span class="pill s-on">{t("w.on")}</span>' if w["active"]
@@ -123,10 +141,11 @@ def render(cfg, style, nav, token, rows, msg=None, msg_ok=True, values=None):
                   else small_form("activate", wid, t("w.activate")))
         delete = (f'<details class="del"><summary>{t("w.delete")}</summary><p>{t("w.delete_q")}</p>'
                   + small_form("delete", wid, t("w.delete_yes"), ' class="danger"') + "</details>")
+        regen = small_form("regen", wid, t("w.regen"))
         trs.append(f'<tr class="{"on" if w["active"] else "off"}"><td><div class="nm">{esc(w["name"])}</div>{note}</td>'
-                   f'<td><div class="terms">{terms}</div></td><td class="num">{esc(price(w["max_price"], code))}</td>'
+                   f'<td><div class="terms">{terms}</div>{meta}</td><td class="num">{esc(price(w["max_price"], code))}</td>'
                    f'<td>{plats}</td><td>{state}</td>'
-                   f'<td><div class="acts"><a class="btn" href="?edit={wid}#form">{t("w.edit")}</a>{toggle}{delete}</div></td></tr>')
+                   f'<td><div class="acts"><a class="btn" href="?edit={wid}#form">{t("w.edit")}</a>{regen}{toggle}{delete}</div></td></tr>')
     table = (f'<div class="box"><table class="wl"><thead><tr><th>{t("w.th.name")}</th><th>{t("w.th.terms")}</th>'
              f'<th class="num">{t("w.th.price")}</th><th>{t("w.th.platforms")}</th><th>{t("w.th.state")}</th><th></th>'
              f'</tr></thead><tbody>{"".join(trs)}</tbody></table></div>' if rows
@@ -137,18 +156,23 @@ def render(cfg, style, nav, token, rows, msg=None, msg_ok=True, values=None):
     terms = list(v.get("terms") or [])[:wishes.MAX_TERMS]
     terms += [""] * (wishes.MAX_TERMS - len(terms))
     term_inputs = "".join(f'<input name="terms" maxlength="{wishes.MAX_TERM}" value="{esc(x)}" '
-                          f'placeholder="{t("w.ph.term")}"' + (" required" if i == 0 else "") + ">"
-                          for i, x in enumerate(terms))
+                          f'placeholder="{t("w.ph.term")}">' for x in terms)
+    terms_hint = t("w.f.terms_hint")
+    if editing and v.get("terms") and v.get("terms_source") == "ai":
+        terms_hint += " " + t("w.f.terms_ai")
     plats = "".join(f'<label class="check"><input type="checkbox" name="platforms" value="{esc(p)}"'
                     + (" checked" if p in (v.get("platforms") or []) else "") + f"> {esc(plat_label(p))}</label>"
                     for p in allowed)
     form = (f'<form method="post" action="./" class="wform" id="form">{hidden}'
             f'<input type="hidden" name="action" value="{"update" if editing else "create"}">'
-            + (f'<input type="hidden" name="id" value="{int(v["id"])}">' if editing else "")
+            + (f'<input type="hidden" name="id" value="{int(v["id"])}">'
+               f'<input type="hidden" name="terms_seen" value="{esc(v.get("terms_seen", v.get("terms_updated")) or "")}">'
+               if editing else "")
             + f'<h2 class="wide">{t("w.edit_title") if editing else t("w.new")}</h2>'
             f'<label class="wide">{t("w.f.name")}<input name="name" required maxlength="{wishes.MAX_NAME}" '
             f'value="{esc(v.get("name"))}" placeholder="{t("w.ph.name")}"></label>'
-            f'<div class="wide"><label>{t("w.f.terms", max=wishes.MAX_TERMS)}</label><div class="tl">{term_inputs}</div></div>'
+            f'<div class="wide"><label>{t("w.f.terms", max=wishes.MAX_TERMS)}</label><div class="tl">{term_inputs}</div>'
+            f'<p class="fhint">{terms_hint}</p></div>'
             f'<label>{t("w.f.price")}<input name="max_price" required inputmode="decimal" maxlength="12" '
             f'value="{esc(price_input(v.get("max_price")))}"></label>'
             f'<div><label>{t("w.f.platforms")}</label><div class="plats">{plats}</div></div>'

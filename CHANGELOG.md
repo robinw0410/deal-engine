@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.2.14 – 2026-11-06
+
+### Added
+
+- **Optional search terms on the wish list**: a wish can be saved without search terms (0–5 instead of
+  1–5, form and JSON API). The deal server never calls a model itself; a host application generates
+  the missing terms and stores them with **`wishes.set_ai_terms(cfg, wish_id, terms)`**: the terms are
+  cleaned with **`wishes.clean_ai_terms`** (plain text, no regex or search syntax, bounded length, no
+  duplicates, at most 5; invalid entries are dropped) and written in one transaction only if the wish
+  has no terms or new suggestions were requested, so terms the user entered (also meanwhile) are never
+  overwritten. `wishes.needs_terms(w)` tells which active wishes need suggestions.
+- **New wish fields** `terms_source` (`"user"` | `"ai"`), `terms_updated` (time of the last change of
+  the terms) and `terms_regen` (new suggestions requested), in `wishes.active(cfg)` and the JSON API.
+  A wish created without terms gets `terms_source` `"ai"`; changing the terms in the form or API makes
+  them the user's (`"user"`; emptied again: `"ai"`, suggestions pending).
+- **"Suggest terms again"** button per wish (form action `regen` with CSRF token) and
+  `POST /deals/api/wishes/<id>/regen` (header `X-CSRF-Token`, `application/json`, same-origin check):
+  **`wishes.request_regen(con, id)`** only sets `terms_regen`; the next run of the host application
+  replaces the terms. The page labels suggested terms "AI suggestion" with their time and shows
+  "Suggestions pending" for wishes without terms or with a pending request; the form explains that
+  empty terms are suggested on the next run and that changed suggestions become the user's own.
+
+### Changed
+
+- **Database migration**: `wishes.init` adds the three columns to an existing `wish` table of 0.2.13
+  (`ALTER TABLE`, defaults `"user"`, none, no request); `wishes.active(cfg)` on a database that has not
+  been migrated yet (read-only) returns the defaults.
+
 ## 0.2.13 – 2026-11-06
 
 ### Added
