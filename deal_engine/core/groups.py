@@ -155,9 +155,25 @@ def extras_count(title, extra_regex, loc=None):
     return max(0, min(n, 8))
 
 
+def extras_included(group, name):
+    """Units of the extras group `name` that belong to the device itself and are no additional value of
+    a bundle: group "extras_included", a number for all extras groups or {"<extras group>": n}; default 1
+    (a console comes with one controller, so "PS4 mit 2 Controllern" has one additional controller).
+    Only the bundle adjustment of the market statistics uses it (market.bundle_adjust); extras_value()
+    and market.extras_resale() count every listed unit, as before."""
+    v = (group or {}).get("extras_included", 1)
+    if isinstance(v, dict):
+        v = v.get(name, 1)
+    try:
+        return max(0, int(v))
+    except (TypeError, ValueError):
+        return 1
+
+
 def extras_value(title, group, market, loc=None):
     """Market value of the extras a device listing includes, for the candidate threshold only:
-    group "extras": {"<other group>": "<regex counting its units>"}; n x that group's median.
+    group "extras": {"<other group>": "<regex counting its units>"}; n x that group's median (every
+    listed unit counts, extras_included is not applied here).
     Extras without market data (or games, which no group covers) add nothing. Returns (eur, [(name, n)])."""
     total, parts = 0, []
     for name, extra_rx in ((group or {}).get("extras") or {}).items():
@@ -169,49 +185,83 @@ def extras_value(title, group, market, loc=None):
     return total, parts
 
 
-# words between a count and "games": "3 original PS4 Spiele", "2 Nintendo Switch games" (not "2 Controller und Spiele")
+# words between a count (or a with-word) and "games": "3 original PS4 Spiele", "mit vielen Spielen", "2 Nintendo
+# Switch games" (not "2 Controller und Spiele")
 _GAME_ADJ = (r"original\w*|orig\.?|weitere\w*|zusätzliche\w*|zusaetzliche\w*|additional|extra|neue\w*|new|tolle\w*|"
-             r"gute\w*|great|top|verschiedene\w*|diverse\w*|various|different|sony|microsoft|nintendo|"
+             r"gute\w*|great|top|verschiedene\w*|diverse\w*|various|different|viele\w*|einige\w*|mehrere\w*|"
+             r"etliche\w*|zahlreiche\w*|paar|many|several|some|few|couple\s+of|sony|microsoft|nintendo|"
              r"xbox(?:\s+(?:one|360|series\s+[xs]))?|ps\s?[1-5]|playstation(?:\s*[1-5])?|switch|wii(?:\s?u)?|3?ds|pc")
 
 
 @lru_cache(maxsize=16)
 def _games_rx(code):
+    """(mention, directly after a with-word, what follows when the games are not part of the offer)."""
     L = _loc(code)
-    num = r"\d{1,2}|" + "|".join(sorted(map(re.escape, L.number_words), key=len, reverse=True))
-    return re.compile(
+    num = (r"\d{1,2}|" + "|".join(sorted(map(re.escape, L.number_words), key=len, reverse=True))
+           + r"|(?:" + L.game_one + r")(?![\w-])(?!\s+(?:paar|few|couple)\b)")   # "ein paar Spiele" is no count
+    mention = re.compile(
         r"(?:(?<![\w.,-])(" + num + r")\s*(?:[x×]\s*)?(?:(?:" + _GAME_ADJ + r")[\s-]+){0,3})?"   # count: "3", "3x", "drei"
         r"(?<![a-zäöüß])(" + L.game_words + r")(?!\w)(?![\s-]*(?:" + L.game_not + r"))", re.I)
+    # "mit Spielen", "+ viele Spiele", "inkl. PlayStation 4 Spielen": with-word, fillers, the word for games
+    joined = re.compile(r"(" + L.with_words + r")\s*(?:(?:" + _GAME_ADJ + r"|ein|an?|\d{1,2})[\s-]+){0,4}$", re.I)
+    gone = re.compile(r"[\s(]*(?:" + L.game_gone + r")", re.I)
+    return mention, joined, gone
+
+
+def _in_with_clause(t, pos, L, joined):
+    """The word at `pos` is listed as an extra: it stands in a with-clause of the locale and the last
+    joining word before it is not "ohne"/"without" (as in has_extras: "mit Controller, Kabel und Spielen"),
+    or it follows a with-word directly or after fillers ("mit vielen Spielen", "+ PlayStation 4 Spiele")."""
+    j = joined.search(t[:pos])
+    if j and not L.without.search(j.group(1)):
+        return True
+    for c in L.with_clause.finditer(t):
+        if c.start() <= pos < c.end():
+            joins = list(L.with_word.finditer(t, c.start(), pos))
+            return bool(joins) and not L.without.search(joins[-1].group(0))
+    return False
 
 
 def games_count(title, loc=None, default=2):
-    """How many games the title lists with the device, for the flat value per game (market.game_value):
-    "mit 3 Spielen" = 3, "+ 6 Spiele" = 6, "mit drei Spielen" = 3, "inkl. Spiel" = 1, "ohne Spiele" and
-    "keine Spiele" = 0; games without a count ("mit Spielen", "viele Spiele", "+ games") = `default`
-    (market.games_default). Several counted mentions add up ("3 Spiele + 2 Games" = 5), at most 50.
+    """How many games the title lists with the device, for the flat value per game (market.game_value).
+
+    With a count the mention counts wherever it stands: "mit 3 Spielen" = 3, "+ 6 Spiele" = 6, "PS4, 2
+    Controller, 8 Spiele" = 8, "mit drei Spielen" = 3, "zwölf Spiele" = 12, "inkl. einem Spiel" = 1; several
+    counted mentions add up ("3 Spiele + 2 Games" = 5), at most 50.
+    Without a count it counts only as an extra, i.e. in a with-clause ("mit Spielen", "+ Spiele", "inkl.
+    vielen Spielen", "mit Controller, Kabel und Spielen" = `default`, market.games_default; "inkl. Spiel" =
+    1), not after "ohne"/"without". "PS4 Spiele", "viele Spiele" or "liest Spiele nicht" alone are 0: without
+    a with-word the title describes the device or a fault, not an extra.
+    Never counted: a negation before ("ohne Spiele", "keine Spiele", "keine 3 Spiele", "ohne Controller und
+    Spiele"); a negation or a verb after (the locale's game_gone: "Spiele nicht dabei", "2 Spiele separat
+    erhältlich", "und Spiele laufen nicht"); a circumstance ("stürzt bei Spielen ab", "friert im Spiel
+    ein", "zum Spielen": the locale's game_prep / game_verb).
 
     Only the locale's word for games counts (de "Spiel/Spiele/Spielen/Games", en "game(s)"): a game named
     by its title alone ("Switch + Zelda") is 0, as nothing says how many there are. Not counted: "Spielekonsole",
-    "game console", "Game Boy", "zum Spielen"; a model number is no count ("PlayStation 4 Spiele" = default,
-    "FC 24 Spiel" = 1)."""
+    "game console", "Game Boy". A model number is no count ("mit PlayStation 4 Spielen" = default, "FC 24
+    Spiel" = 1); a number after "Switch" is read as a count here ("Switch 2 Spiele + 3 Spiele" = 5)."""
     L = _loc(loc)
     t = str(title or "")
+    mention, joined, gone = _games_rx(L.code)
     counted, plain = [], []
-    for m in _games_rx(L.code).finditer(t):
+    for m in mention.finditer(t):
         before = t[:m.start()]
-        if re.search(r"\b(?:" + L.game_verb + r")\s+$", before, re.I):
-            continue   # "zum Spielen", "ready to game"
+        if re.search(r"\b(?:" + L.game_verb + r"|" + L.game_prep + r")\s+$", before, re.I):
+            continue   # "zum Spielen", "ready to game", "stürzt bei Spielen ab", "friert im Spiel ein"
+        if gone.match(t, m.end()):
+            continue   # "Spiele nicht dabei", "Spiele laufen nicht", "2 Spiele separat erhältlich"
         v = (m.group(1) or "").lower()
-        if v and L.not_qty.search(t[:m.start(1)]):
+        if v and L.game_model.search(t[:m.start(1)]):
             v = ""     # "PlayStation 4 Spiele", "PS 5 games": model number
         if re.search(r"\b(?:" + L.negations + r")\s+" + ("$" if v else
                      r"(?:[\w.-]+\s*(?:,|und|oder|and|or|&|/)\s*|\w+\s+)?$"), before, re.I):
             continue   # "ohne Spiele", "keine Spiele", "ohne Controller und Spiele"
         single = bool(L.game_single.fullmatch(m.group(2)))
         if v:
-            k = L.number_words.get(v) or int(v)
+            k = L.number_words.get(v) or (int(v) if v.isdigit() else 1)   # "einem Spiel": 1
             counted.append(1 if single and k > 1 else k)   # "FC 24 Spiel": a title's number, one game
-        else:
+        elif _in_with_clause(t, m.start(2), L, joined):
             plain.append(1 if single else max(0, int(default)))
     n = sum(counted) if counted else max(plain, default=0)
     return max(0, min(n, 50))
@@ -354,3 +404,10 @@ def check_groups(groups, where="market.groups"):
                     raise ValueError(f"{where}[{i}] ({g['name']}): invalid regex in extras '{name}': {e}")
                 if c.match(""):
                     raise ValueError(f"{where}[{i}] ({g['name']}): extras regex '{name}' matches the empty string")
+        inc = g.get("extras_included")
+        if inc is not None:
+            vals = inc if isinstance(inc, dict) else {None: inc}
+            unknown = [k for k in vals if k is not None and k not in (ex or {})]
+            if unknown or not all(isinstance(v, int) and not isinstance(v, bool) and v >= 0 for v in vals.values()):
+                raise ValueError(f"{where}[{i}] ({g['name']}): 'extras_included' must be an integer >= 0 or map "
+                                 f"extras groups of this group to integers >= 0, not {inc!r}")

@@ -84,6 +84,7 @@ searches:
       # sample: device_only            # median only from listings the LLM classification calls a single device
       #                                # (default: all = word rules; needs track, classify and the LLM evaluator)
       # device_min_n: 8                # device_only: with fewer devices, bundles are added at price minus extras
+      #                                # (additional controllers etc. and games; group key extras_included: 1)
       # game_value: 5                  # flat value per game of a bundle (with device_only, or when set)
       # game_value_max: 30             # at most this much per listing
       # games_default: 2               # "with games" without a count

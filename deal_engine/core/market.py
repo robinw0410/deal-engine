@@ -15,7 +15,12 @@ Which listings count for 1. is market.sample (per search):
                  history.classification) calls a single device of this group; not yet classified
                  listings do not count, no model is called here. With fewer than device_min_n devices,
                  bundles of the group are added with their price minus the extras (adjusted_bundles):
-                 n x the median of the group's "extras" groups and a flat value per game.
+                 the additional units of the group's "extras" groups (one belongs to the device, see
+                 groups.extras_included) x their median, and a flat value per game.
+                 Bundles the word rules recognise ("PS4 mit 3 Spielen") get no tracking group; the
+                 group queries note them in history.db so that they are classified (history.track).
+                 A newly computed entry of the market file carries "date"; a group with too little
+                 data keeps its previous entry unchanged (refresh() logs which one that is).
 sample_report() compares both ways on the listings stored in history.db.
 """
 import re
@@ -26,8 +31,8 @@ from . import clock
 from . import locale as locale_mod
 from .filters import has_signal
 from .history import TITLE_LEN
-from .groups import (bundle_qty, extras_count, from_classification, games_count, has_extras, is_accessory,
-                     match_group)
+from .groups import (bundle_qty, extras_count, extras_included, from_classification, games_count, has_extras,
+                     is_accessory, match_group)
 from .util import median, num
 
 DEFAULTS = {
@@ -51,7 +56,11 @@ SAMPLES = ("all", "device_only")
 
 
 def settings(mc):
-    return {**DEFAULTS, **(mc or {})}
+    s = {**DEFAULTS, **(mc or {})}
+    for k in ("device_min_n", "games_default"):   # null in a search built without config.search: the default
+        if s[k] is None:
+            s[k] = DEFAULTS[k]
+    return s
 
 
 def sample_mode(mc):
@@ -60,6 +69,23 @@ def sample_mode(mc):
     if mode not in SAMPLES:
         raise ValueError(f"market.sample must be one of {', '.join(SAMPLES)}, not {mode!r}")
     return mode
+
+
+def check_settings(mc):
+    """ValueError with a readable message if market.sample is unknown or one of the numbers of the sample
+    settings cannot work: device_min_n and games_default integers >= 0, game_value and game_value_max
+    numbers >= 0 (game_value_max: null = no maximum). Settings that are not given are not checked."""
+    mc = mc or {}
+    sample_mode(mc)
+    for k, whole in (("device_min_n", True), ("games_default", True), ("game_value", False),
+                     ("game_value_max", False)):
+        if k not in mc or (mc[k] is None and k == "game_value_max"):
+            continue
+        v = mc[k]
+        ok = not isinstance(v, bool) and isinstance(v, int if whole else (int, float)) and 0 <= v < float("inf")
+        if not ok:
+            raise ValueError(f"market.{k} must be {'an integer' if whole else 'a number'} >= 0"
+                             f"{' or null (no maximum)' if k == 'game_value_max' else ''}, not {v!r}")
 
 
 def _plain(x):
@@ -100,15 +126,19 @@ def games_value(title, mc, loc=None):
 
 
 def bundle_adjust(title, price, group, market=None, mc=None, loc=None):
-    """Price of the device alone in a bundle listing: price minus n x the asking median of every extras
-    group of the device group (groups.extras_count, medians from `market`) minus the flat value of the
-    games (games_value). None if nothing can be deducted, or if the title lists extras of a group without
-    a market price: a bundle whose extras cannot be valued stays out of the statistics instead of pulling
-    the median up."""
+    """Price of the device alone in a bundle listing: price minus the ADDITIONAL units of every extras
+    group of the device group x that group's asking median (medians from `market`) minus the flat value
+    of the games (games_value). Additional = listed units (groups.extras_count) minus the ones that belong
+    to the device (groups.extras_included, default 1): "PS4 mit 2 Controllern" deducts one controller,
+    "PS4 mit Controller" none. (The evaluation of an offer, groups.extras_value / extras_resale, counts
+    every listed unit; that is not changed here.)
+    None if nothing can be deducted, or if the title lists additional extras of a group without a market
+    price: a bundle whose extras cannot be valued stays out of the statistics instead of pulling the
+    median up."""
     ded = 0
     for name, rx in ((group or {}).get("extras") or {}).items():
-        n = extras_count(title, rx, loc)
-        if not n:
+        n = extras_count(title, rx, loc) - extras_included(group, name)
+        if n <= 0:
             continue
         m = (market or {}).get(name)
         if not isinstance(m, dict) or not m.get("median"):
@@ -179,6 +209,10 @@ def _pick(rows, s):
 
 def _needs_bundles(cs, s):
     return len(cs["device"]) < int(s["device_min_n"]) and bool(cs["bundle"])
+
+
+def _thin(cs):
+    return f"device {len(cs['device'])}, bundle {len(cs['bundle'])}, unclassified {cs['unclassified']}"
 
 
 def _from_sample(cs, group, mc, loc, market):
@@ -255,11 +289,19 @@ def estimate_groups(old, items_by_group, groups, flt, mc, loc=None, today=None):
     bundles) do not depend on other groups and come first; a group that needs adjusted bundles comes
     after the groups its "extras" refer to, so the bundle adjustment uses their freshly computed
     medians, and the previous ones (`old`) where a group has no new value. Groups whose extras refer
-    to each other are computed in config order."""
+    to each other are computed in config order.
+
+    Every group only looks at its own list, and a listing counts for at most one group, so the cost is
+    listings x groups (one match_group per listing), not more."""
+    return _estimate_groups(old, items_by_group, groups, flt, mc, loc, today)[0]
+
+
+def _estimate_groups(old, items_by_group, groups, flt, mc, loc=None, today=None):
+    """estimate_groups() and the classified_sample() of every group ({} with sample all)."""
     names = [g["name"] for g in groups]
     if sample_mode(mc) == "all":
         return {g["name"]: estimate(items_by_group.get(g["name"], []), g, groups, flt, mc, loc, today=today)
-                for g in groups}
+                for g in groups}, {}
     s = settings(mc)
     ref = {k: v for k, v in (old or {}).items() if isinstance(v, dict)}
     samples = {g["name"]: classified_sample(items_by_group.get(g["name"], []), g, groups, flt, mc, loc, today)
@@ -280,25 +322,36 @@ def estimate_groups(old, items_by_group, groups, flt, mc, loc=None, today=None):
                 ref[g["name"]] = m
         done = {g["name"] for g in ready}
         pending = [g for g in pending if g["name"] not in done]
-    return {n: out.get(n) for n in names}
+    return {n: out.get(n) for n in names}, samples
 
 
 def refresh(old, items_by_group, groups, flt, mc, log=print, loc=None):
-    """New market dict from {group name: [items]}; keeps the old value where data is too thin."""
+    """New market dict from {group name: [items]}; keeps the old entry where data is too thin.
+
+    With market.sample other than "all" every newly computed entry gets "date" (today, YYYY-MM-DD). A
+    kept entry stays exactly as it was written, with its old date, or without "date"/"sample" if it
+    still is a value computed with sample all; the log names what was counted and what is kept:
+      market X: too little data (device 3, bundle 1, unclassified 12), keeping previous value (sample all, undated)
+    With sample all neither the entries nor the log lines change."""
     new = {"_updated": clock.today_str(), "_ts": time.time()}
-    est = estimate_groups(old, items_by_group, groups, flt, mc, loc)
+    est, samples = _estimate_groups(old, items_by_group, groups, flt, mc, loc)
+    dated = sample_mode(mc) != "all"
     for g in groups:
-        m = est.get(g["name"])
+        name = g["name"]
+        m = est.get(name)
+        thin = f" ({_thin(samples[name])})" if name in samples else ""
         if m:
-            new[g["name"]] = m
-            log(f"  market {g['name']}: median {m['median']} (n={m['n']})"
+            new[name] = {**m, "date": new["_updated"]} if dated else m
+            log(f"  market {name}: median {m['median']} (n={m['n']})"
                 + (f", {m['sample']}: {m['n_device']} devices + {m['n_bundle']} adjusted bundles"
                    if "sample" in m else ""))
-        elif g["name"] in old:
-            new[g["name"]] = old[g["name"]]
-            log(f"  market {g['name']}: too little data, keeping previous value")
+        elif name in old:
+            new[name] = old[name]
+            o = old[name] if isinstance(old[name], dict) else {}
+            kept = f" (sample {o.get('sample') or 'all'}, {o.get('date') or 'undated'})" if dated else ""
+            log(f"  market {name}: too little data{thin}, keeping previous value{kept}")
         else:
-            log(f"  market {g['name']}: too little data")
+            log(f"  market {name}: too little data{thin}")
     return new
 
 
@@ -361,7 +414,9 @@ def sample_report(con, sc, days=30, loc=None, today=None, market=None):
     loc = loc if isinstance(loc, locale_mod.Locale) else locale_mod.get(loc or sc.get("_locale") or "en")
     day = _day(today)
     since = str(day - timedelta(days=int(days)))
-    items = []
+    # every listing goes once into the list of the group it can count for: the group of the word rules
+    # and/or the one its classification names (not all listings to every group, which costs groups^2)
+    by = {g["name"]: [] for g in groups}
     for title, price, private, published, defect, c_uid, c_title, grp, qty, kind in con.execute(
             """SELECT l.title, l.price, l.private, l.published, l.defect, c.uid, c.title, c.grp, c.qty, c.kind
                FROM listing l LEFT JOIN classify c ON c.uid = l.uid
@@ -369,15 +424,18 @@ def sample_report(con, sc, days=30, loc=None, today=None, market=None):
         if defect:
             continue
         title = (title or "")[:TITLE_LEN]
-        items.append({"title": title, "price": price, "private": bool(private), "_published": published,
-                      "_cls": (grp, qty or 1, kind) if c_uid is not None and c_title == title else None})
-    by = {g["name"]: items for g in groups}
+        it = {"title": title, "price": price, "private": bool(private), "_published": published,
+              "_cls": (grp, qty or 1, kind) if c_uid is not None and c_title == title else None}
+        word = match_group(title, groups)
+        c = from_classification(title, it["_cls"], groups)
+        for name in dict.fromkeys(g["name"] for g in (word, c[1] if c else None) if g):
+            by[name].append(it)
     mc_after = mc if sample_mode(mc) != "all" else {**mc, "sample": "device_only"}
     before = estimate_groups({}, by, groups, flt, {**mc, "sample": "all"}, loc, day)
-    after = estimate_groups(market or {}, by, groups, flt, mc_after, loc, day)
+    after, samples = _estimate_groups(market or {}, by, groups, flt, mc_after, loc, day)
     out = []
     for g in groups:
-        cs = classified_sample(items, g, groups, flt, mc_after, loc, day)
+        cs = samples[g["name"]]
         dev, bun = [r[0] for r in cs["device"]], [r[0] for r in cs["bundle"]]
         total = len(dev) + len(bun)
         out.append({"group": g["name"], "before": before[g["name"]], "after": after[g["name"]],

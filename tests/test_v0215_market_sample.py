@@ -162,10 +162,12 @@ def test_games_count_and_flat_value(title, n, eur):
     ("PS4 keine Spiele dabei", DE, 0), ("PS4 ohne Controller und Spiele", DE, 0),
     ("PS4 + 2 Controller und Spiele", DE, 2), ("PS4 mit 2 Controllern, 3 Spiele", DE, 3),
     ("PS4 mit 3 Spielen + 2 Games", DE, 5), ("PS4 mit 5 PS4-Spielen", DE, 5), ("PS4 3 original PS4 Spiele", DE, 3),
-    ("PS4 mit Games", DE, 2), ("PS4 viele Spiele", DE, 2), ("PS4 mit Spielesammlung", DE, 2),
+    ("PS4 mit Games", DE, 2), ("PS4 mit vielen Spielen", DE, 2), ("PS4 mit Spielesammlung", DE, 2),
     ("PS4 mit 12 Spielen", DE, 12), ("PS4 ohne OVP 3 Spiele", DE, 3),
-    # no count: model numbers, a single title without the word, other words
-    ("PlayStation 4 Spiele", DE, 2), ("Xbox 360 Spiele", DE, 2), ("PS4 mit FC 24 Spiel", DE, 1),
+    # no count: model numbers (default in a with-clause, nothing without one), a single title without
+    # the word, other words
+    ("Konsole mit PlayStation 4 Spielen", DE, 2), ("Konsole + Xbox 360 Spiele", DE, 2), ("PS4 mit FC 24 Spiel", DE, 1),
+    ("PlayStation 4 Spiele", DE, 0), ("Xbox 360 Spiele", DE, 0), ("PS4 viele Spiele", DE, 0),
     ("Switch + Zelda", DE, 0), ("Sony Spielekonsole PS4", DE, 0), ("PS4 Spiele-Konsole 500GB", DE, 0),
     ("PS4 zum Spielen bereit", DE, 0), ("Game Boy Color", DE, 0), ("PS4 mit 2 Controllern", DE, 0),
     ("Switch OLED with 3 games", EN, 3), ("PS4 + 6 games", EN, 6), ("Switch with games", EN, 2),
@@ -193,7 +195,7 @@ def test_games_settings():
 
 def test_bundle_adjust():
     full = "PS4 Slim + 2 Controller + 6 Spiele"
-    assert bundle_adjust(full, 230, PS4, MARKET, DEV, DE) == 230 - 2 * 25 - 30
+    assert bundle_adjust(full, 230, PS4, MARKET, DEV, DE) == 230 - 25 - 30   # one controller belongs to the console
     assert bundle_adjust("PS4 mit 3 Spielen", 170, PS4, MARKET, DEV, DE) == 155
     assert bundle_adjust("PS4 mit Spielen", 165, PS4, {}, DEV, DE) == 155
     # nothing to deduct, or controllers without a market price: the bundle cannot be valued
@@ -208,7 +210,7 @@ def test_bundle_adjust():
 
 def ps4_items(n_dev=5):
     devices = [dev("PS4 500GB", p, "PS4") for p in (140, 150, 150, 155, 160, 150, 150, 150)[:n_dev]]
-    bundles = [bun("PS4 Slim + 2 Controller + 6 Spiele", 230, "PS4"),      # 230 - 2 x 25 - 30 = 150
+    bundles = [bun("PS4 Slim + 2 Controller + 6 Spiele", 230, "PS4"),      # 230 - 1 x 25 - 30 = 175
                bun("PS4 mit 3 Spielen", 170, "PS4"),                       # 155
                dev("PS4 mit Spielen", 165, "PS4"),                         # device by the model, games by the rule: 155
                bun("PS4 ohne Spiele", 150, "PS4"),                         # nothing to deduct: left out
@@ -221,7 +223,7 @@ def ps4_items(n_dev=5):
 
 def test_fallback_adjusted_bundles_below_device_min_n():
     m = estimate(ps4_items(), PS4, GROUPS, FLT, DEV, DE, market=MARKET)
-    assert m == {"median": 152, "p25": 150, "n": 8, "sample": "adjusted_bundles", "n_device": 5, "n_bundle": 3}
+    assert m == {"median": 155, "p25": 150, "n": 8, "sample": "adjusted_bundles", "n_device": 5, "n_bundle": 3}
     # enough devices: bundles stay out
     m = estimate(ps4_items(8), PS4, GROUPS, FLT, DEV, DE, market=MARKET)
     assert (m["sample"], m["n"], m["n_device"], m["n_bundle"]) == ("device_only", 8, 8, 0)
@@ -243,11 +245,12 @@ def test_refresh_uses_the_fresh_controller_median_whatever_the_group_order():
         logs = []
         new = refresh(old, by, groups, FLT, DEV, logs.append, DE)
         assert new["Controller"] == {"median": 25, "p25": 25, "n": 8, "sample": "device_only",
-                                     "n_device": 8, "n_bundle": 0}
-        assert new["PS4"] == {"median": 152, "p25": 150, "n": 8, "sample": "adjusted_bundles",
-                              "n_device": 5, "n_bundle": 3}
-        assert any("PS4: median 152 (n=8), adjusted_bundles: 5 devices + 3 adjusted bundles" in s for s in logs)
-    # no new controller value: the previous one is used (230 - 2 x 70 - 30 = 60, below the group's range)
+                                     "n_device": 8, "n_bundle": 0, "date": str(TODAY)}
+        assert new["PS4"] == {"median": 155, "p25": 150, "n": 8, "sample": "adjusted_bundles",
+                              "n_device": 5, "n_bundle": 3, "date": str(TODAY)}
+        assert any("PS4: median 155 (n=8), adjusted_bundles: 5 devices + 3 adjusted bundles" in s for s in logs)
+    # no new controller value: the previous one is used (230 - 130 - 30 = 70, below the group's range)
+    old = {"_updated": "2026-06-29", "Controller": {"median": 130, "p25": 50, "n": 9}}
     new = refresh(old, {"PS4": ps4_items()}, [PS4, PAD], FLT, DEV, lambda s: None, DE)
     assert new["Controller"] == old["Controller"]
     assert (new["PS4"]["n_device"], new["PS4"]["n_bundle"]) == (5, 2)
@@ -311,10 +314,21 @@ def test_score_names_the_games_when_the_resale_cap_applies():
     assert "(inkl. Spiele (6) pauschal 30 €)" in only["text"]
     en = compute({**base, "market_resale_estimate": 158, "market_games": {"count": 6, "value": 30}}, {**c, "_loc": EN})
     assert "(incl. games (6) at a flat 30 €)" in en["text"]
-    # cap not binding: the price is the evaluator's, nothing is named
+    # cap not binding: the price is the evaluator's; the games in the market estimate are named all the same
     low = compute({**base, "market_price": 150, "market_resale_estimate": 198,
                    "market_games": {"count": 6, "value": 30}}, c)
-    assert "Spiele" not in low["text"]
+    assert "Verkauf 150 € (Marktschätzung 198 € inkl. Spiele (6) pauschal 30 €) − Kauf" in low["text"]
+    no_games = compute({**base, "market_price": 150, "market_resale_estimate": 198}, c)
+    assert "Spiele" not in no_games["text"] and "Marktschätzung" not in no_games["text"]
+    # the note changes no number
+    assert {k: v for k, v in low.items() if k != "text"} == {k: v for k, v in no_games.items() if k != "text"}
+    en = compute({**base, "market_price": 150, "market_resale_estimate": 198,
+                  "market_games": {"count": 6, "value": 30}}, {**c, "_loc": EN})
+    assert "(market estimate 198 € incl. games (6) at a flat 30 €)" in en["text"]
+    # no market estimate, or a value of 0: nothing went into anything, nothing is said
+    for extra in ({"market_games": {"count": 6, "value": 30}}, {"market_resale_estimate": 198,
+                                                                "market_games": {"count": 6, "value": 0}}):
+        assert "Spiele" not in compute({**base, "market_price": 150, **extra}, c)["text"]
 
 
 def test_insights_adds_the_games_once_per_run_and_drops_them_without_the_setting(tmp_path, monkeypatch):
@@ -401,7 +415,7 @@ def test_sample_report_on_a_read_only_history_db(tmp_path):
     assert pad["bundle"] == {"median": None, "n": 0} and pad["bundle_share"] == 0
     # PS4: the word rules count the five single units; device_only adds the three adjusted bundles
     assert ps4["before"] == {"median": 150, "p25": 150, "n": 5}
-    assert ps4["after"] == {"median": 152, "p25": 150, "n": 8, "sample": "adjusted_bundles", "n_device": 5, "n_bundle": 3}
+    assert ps4["after"] == {"median": 155, "p25": 150, "n": 8, "sample": "adjusted_bundles", "n_device": 5, "n_bundle": 3}
     assert ps4["device"] == {"median": 150, "n": 5} and ps4["bundle"] == {"median": 170, "n": 3}
     assert ps4["bundle_share"] == 0.375 and ps4["unclassified"] == 0
 
@@ -484,7 +498,8 @@ def test_update_market_attaches_the_stored_classification(tmp_path, monkeypatch)
     new = pipeline.update_market(cfg, sc, adapter, P, logs.append)
     cls = {it["source_id"]: it["_cls"] for it in seen["Console A"]}
     assert cls["d0"] == ("Console A", 1, "device") and cls["b0"] == ("Console A", 1, "bundle") and cls["u1"] is None
-    assert new["Console A"] == {"median": 150, "p25": 150, "n": 8, "sample": "device_only", "n_device": 8, "n_bundle": 0}
+    assert new["Console A"] == {"median": 150, "p25": 150, "n": 8, "sample": "device_only", "n_device": 8,
+                                "n_bundle": 0, "date": str(TODAY)}
     assert json.loads(P["market"].read_text())["Console A"] == new["Console A"]
     assert any("market sample device_only: 14 of 15 listings classified" in s for s in logs)
     # a changed title invalidates the stored classification
@@ -524,7 +539,8 @@ def test_update_market_survives_a_missing_or_broken_history_db(tmp_path, db):
     logs = []
     new = pipeline.update_market(cfg, sc, adapter, P, logs.append)
     assert new["Console A"] == old["Console A"] and new["_updated"] == str(TODAY)   # nothing classified: old value kept
-    assert any("too little data, keeping previous value" in s for s in logs)
+    assert any("Console A: too little data (device 0, bundle 0, unclassified 15), keeping previous value "
+               "(sample all, undated)" in s for s in logs)
     assert (P["history"].read_bytes() if P["history"].exists() else None) == before   # never created or changed
     if db in ("broken", "no_table"):
         assert any("not readable" in s for s in logs)

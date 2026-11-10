@@ -123,15 +123,21 @@ def compute(l, c, caps=True):
     capped = loc.t("score.bundle", n=l["bundle_qty"]) if l.get("bundle_qty") else ""
     extras = [x for x in (l.get("market_extras") or []) if isinstance(x, dict) and x.get("resale")]
     games = l.get("market_games") if isinstance(l.get("market_games"), dict) else {}
+    games_item = (loc.t("score.games_item", n=games.get("count", "?"), eur=eur(games["value"]))
+                  if num(games.get("value")) else "")
     if est and resale > est * c["resale_cap"]:
         resale, capped = round(est * c["resale_cap"]), capped + loc.t("score.capped_market")
         # the capped price comes from the market estimate, which includes the extras and the games
         incl = [loc.t("score.extra_item", n=x.get("count", 1), group=x.get("group", "?"), eur=eur(x["resale"]))
                 for x in extras]
-        if num(games.get("value")):
-            incl.append(loc.t("score.games_item", n=games.get("count", "?"), eur=eur(games["value"])))
+        if games_item:
+            incl.append(games_item)
         if incl:
             capped += loc.t("score.extras", items=", ".join(incl))
+    elif est and games_item:
+        # cap not binding: the price is the evaluator's, but the market estimate it was held against (and
+        # that the evaluator saw) contains the flat value of the games; say so, the numbers do not change
+        capped += loc.t("score.games_est", est=eur(est), games=games_item)
     mh = c["min_hours"]
     hours = max(hours, mh.get(kind, 1.0) if isinstance(mh, dict) else mh) + travel_h
     profit = resale - price - parts - ship

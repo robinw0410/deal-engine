@@ -15,30 +15,54 @@
   "not classified", never an aborted run). An unknown `sample` value is a configuration error.
 - **Adjusted bundles**: with fewer than **`market.device_min_n`** (default 8) single devices,
   bundles of the group are added at their price minus the extras (**`market.bundle_adjust`**):
-  n × the asking median of the group's `extras` groups (the median computed in the same update,
-  otherwise the previous one; **`market.estimate_groups`** orders the groups accordingly) and a flat
-  value per game. Adjusted prices must be above 0 and within the group's range; a bundle with
-  nothing to deduct or with extras that have no market price is left out.
+  the additional units of the group's `extras` groups × their asking median (the median computed
+  in the same update, otherwise the previous one; **`market.estimate_groups`** orders the groups
+  accordingly) and a flat value per game. One unit of an extras group belongs to the device
+  (**`groups.extras_included`**, group key `extras_included`, default 1: "PS4 mit 2 Controllern"
+  deducts one controller, "PS4 mit Controller" none); the evaluation of an offer (`extras_value`,
+  `extras_resale`) still counts every listed unit. Adjusted prices must be above 0 and within the
+  group's range; a bundle with nothing to deduct or with additional extras that have no market
+  price is left out.
+- **Bundles the word rules recognise are classified**: with `device_only` the group queries note
+  titles with extras ("PS4 mit 3 Spielen") in `history.db` (**`history.track(..., earmark_bundles=True)`**),
+  so the classification after the run reaches them and the bundle fallback can count them. Such
+  titles never get a tracking group with `device_only` (**`history.bundles_apart`**, also in
+  **`classify.correct_tracking(con, results, groups, sc=None)`**): they stay out of the statistics
+  of disappeared listings, `check_gone` makes no request for them, and they share
+  `classify.max_per_run`. With `sample: all` tracking is exactly as before.
 - **Flat value for games**: **`market.game_value`** (default 5 € per game), **`market.game_value_max`**
-  (default 30 € per listing), **`market.games_default`** (default 2 for "mit Spielen" without a
-  count). **`groups.games_count(title, loc, default)`** counts them with the locale's words (de
-  "Spiel/Spiele/Spielen/Games", en "game(s)"): "mit 3 Spielen" = 3, "+ 6 Spiele" = 6, "ohne Spiele" =
-  0, number words; a game named only by its title, "Spielekonsole"/"game console" and model numbers
-  are no count.
+  (default 30 € per listing, `null` = no maximum), **`market.games_default`** (default 2 for "mit
+  Spielen" without a count). **`groups.games_count(title, loc, default)`** counts them with the
+  locale's words (de "Spiel/Spiele/Spielen/Games", en "game(s)"): with a number wherever the
+  mention stands ("mit 3 Spielen" = 3, "+ 6 Spiele" = 6, "PS4, 2 Controller, 8 Spiele" = 8, number
+  words up to twenty), without a number only in a with-clause ("mit Spielen", "+ Spiele"). "ohne
+  Spiele", a negation or verb after the word ("Spiele nicht dabei", "Spiele laufen nicht"),
+  circumstances ("stürzt bei Spielen ab"), a game named only by its title, "Spielekonsole"/"game
+  console" and model numbers are no count.
 - **Evaluation of bundle offers**: the same flat value is added to the candidate threshold and to
   `market_resale_estimate` (selection and insights, next to the extras). The listing carries
-  **`market_games`** (`{count, value}`), `score_calc` names it when the resale cap applies ("Spiele
-  (6) pauschal 30 €"), and the evaluation prompts say it is already in the estimate. Only with
-  `sample: device_only` or when `game_value` is set (0 switches it off); searches with neither
-  setting are evaluated exactly as before.
+  **`market_games`** (`{count, value}`), `score_calc` always names it ("(inkl. …, Spiele (6)
+  pauschal 30 €)" when the resale cap applies, otherwise "(Marktschätzung 198 € inkl. Spiele (6)
+  pauschal 30 €)"; the score itself is the same), and the evaluation prompts say it is already in
+  the estimate. Only with `sample: device_only` or when `game_value` is set (0 switches it off);
+  searches with neither setting are evaluated exactly as before.
 - **Market file**: with `device_only` a group entry also has `"sample"` (`"device_only"` |
-  `"adjusted_bundles"`), `"n_device"` and `"n_bundle"` (`n` = both); with `all` the format is
-  unchanged.
+  `"adjusted_bundles"`), `"n_device"`, `"n_bundle"` (`n` = both) and `"date"` (day it was
+  computed); with `all` the format is unchanged. A group with too little data keeps its previous
+  entry as written (old `date`, or none for a value computed with `all`), and the log names it:
+  "too little data (device 3, bundle 1, unclassified 12), keeping previous value (sample all,
+  undated)".
+- **Checked settings**: `market.device_min_n`, `games_default` (integers ≥ 0), `game_value`,
+  `game_value_max` (numbers ≥ 0, `game_value_max: null` allowed) are checked when a search is
+  loaded (**`market.check_settings`**); an empty or invalid value is a configuration error instead
+  of a failing market update.
 - **`market.sample_report(con, sc, days=30, loc=None, today=None, market=None)`**: before/after per
   group from the listings in `history.db` (read-only connection is enough): `before` with `all`,
   `after` with the search's setting (`device_only` if it still has `all`), `device` and `bundle`
-  (median and n by classification), `bundle_share`, `unclassified`. Command line:
-  `python -m deal_engine market-sample <search> [--days 30]`; `history.connect_ro(db)`.
+  (median and n by classification), `bundle_share`, `unclassified`. Every listing is sorted into
+  its group once (3000 listings with 50 groups: well under a second). Command line:
+  `python -m deal_engine market-sample <search> [--days 30]`; `history.connect_ro(db)` (the
+  database file is not changed; in WAL mode SQLite may create the `-shm`/`-wal` helper files).
 
 ## 0.2.14 – 2026-11-06
 

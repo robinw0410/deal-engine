@@ -161,12 +161,17 @@ _LEAD_DE = (r"^\W*(?:(?:\d+\s*%|original|orig\.?|neu\w*|new|genuine|oem)\s+)*(?:
             + r"\W*(?:für|fuer|for|passend(?:\s+(?:für|fuer|for|zu))?)(?!\w)")
 _SPARE_DE = _spare_rx(_SPARE_NOUN_DE, _SPARE_STATE_DE, _SP_DE) + r"|" + _LEAD_DE
 
+# words after which a number is a model number, not a quantity ("Elite Series 2", "PS 4", "V2")
+_MODEL_EN = r"series|gen\.?|generation|version|model|mk|v|ps|edition|rev\.?|playstation|elite"
+_MODEL_DE = _MODEL_EN + r"|serie|modell"
+
 EN = {
     "number_words": {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
-                     "ten": 10, "pair": 2},
+                     "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+                     "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20, "pair": 2},
     "qty_units": r"x|×|pcs\.?|pieces?|units?",
     "qty_nouns": r"controllers?|gamepads?|dualsense|dualshock|pads",
-    "not_qty": r"(series|gen\.?|generation|version|model|mk|v|ps|edition|rev\.?|switch|playstation|elite)\s*$",
+    "not_qty": r"(" + _MODEL_EN + r"|switch)\s*$",
     "with_words": r"\bwith\b|\bwithout\b|\bincl\b\.?|\bincluding\b|\+|&|\band\b",
     # extras that make a device listing a bundle ("PS4 with 6 games"): not counted as a single unit in the
     # market statistics (groups.has_extras)
@@ -178,6 +183,16 @@ EN = {
     "game_single": r"(?:video[- ]?)?game",
     "game_not": r"&\s*watch|boy|gear|pass|consoles?|pads?|capture|cube|controllers?|cards?|keys?|codes?",
     "game_verb": r"to",
+    # more for games_count: "one" before the word ("with a game"); a number after these words is a model
+    # number ("PS 5 games", "Xbox One games"; not "switch": "Switch 2 games" reads as two games); words
+    # right before the mention that make it a circumstance, not an extra ("freezes in games", "crashes
+    # during 2 games"); what follows when the games are not part of the offer or the title describes a
+    # fault ("games not included", "games sold separately", "games freeze")
+    "game_one": r"an?|one",
+    "game_model": r"(" + _MODEL_EN + r"|xbox)\s*$",
+    "game_prep": r"in|during|when|while|on|after|for|at",
+    "game_gone": (r"not\b|never\b|\w+n['’]t\b|dont\b|wont\b|sold\s+separately|separate(?:ly)?\b|missing|"
+                  r"freez\w*|crash\w*|fail\w*|stutter\w*|on\s+request"),
     "without": r"^\W*(without|ohne)\b",
     "accessory": (r"\bcase\b|\bcover\b|skin|sleeve|\bstand\b|holder|mount|charging\s*(station|dock|stand|kit|cable|kabel)|charger|"
                   r"\bcable\b|\busb\b|empty box|\bbox only\b|packaging|dummy|power ?bank|battery pack|"
@@ -228,6 +243,7 @@ EN = {
         "score.bundle": " (bundle x{n})", "score.capped_market": " (capped at market estimate)",
         "score.extras": " (incl. {items})", "score.extra_item": "{n} × {group} at {eur}",
         "score.games_item": "games ({n}) at a flat {eur}",
+        "score.games_est": " (market estimate {est} incl. {games})",
         "score.bonus": " · profit bonus +{n}", "score.stock": " · parts in stock +{n}",
         "score.no_numbers": "evaluator score (numbers for the formula are missing)",
         "note.damage": "{n} visible damages -{pen}",
@@ -308,10 +324,12 @@ EN = {
 
 DE = {
     "number_words": {"zwei": 2, "drei": 3, "vier": 4, "fünf": 5, "fuenf": 5, "sechs": 6, "sieben": 7, "acht": 8,
-                     "neun": 9, "zehn": 10, **EN["number_words"]},
+                     "neun": 9, "zehn": 10, "elf": 11, "zwölf": 12, "zwoelf": 12, "dreizehn": 13, "vierzehn": 14,
+                     "fünfzehn": 15, "fuenfzehn": 15, "sechzehn": 16, "siebzehn": 17, "achtzehn": 18,
+                     "neunzehn": 19, "zwanzig": 20, **EN["number_words"]},
     "qty_units": r"x|×|stk\.?|stück|stueck|pcs\.?|pieces?",
     "qty_nouns": r"controllers?|gamepads?|dualsense|dualshock|pads",
-    "not_qty": r"(series|serie|gen\.?|generation|version|modell|model|mk|v|ps|edition|rev\.?|switch|playstation|elite)\s*$",
+    "not_qty": r"(" + _MODEL_DE + r"|switch)\s*$",
     "with_words": (r"\bmit\b|\bohne\b|\binkl\b\.?|\binklusive\b|\bsamt\b|\bplus\b|\bund\b|\bwith\b|\bwithout\b|\bincl\b\.?|"
                    r"\bincluding\b|\+|&"),
     "bundle_extras": r"\bspiel\w*|\bgames?\b|fifa|\bfc\s?2\d|call of duty|zelda|mario|pok[eé]mon",
@@ -320,6 +338,14 @@ DE = {
     "game_single": r"(?:video|konsolen)?-?spiel(?:es|s)?|(?:video[- ]?)?game",
     "game_not": EN["game_not"] + r"|konsolen?|st(?:and|ände|aende)|zeug",
     "game_verb": r"zum|zu|beim|am|to",
+    "game_one": r"ein(?:e[mnrs]?)?|" + EN["game_one"],
+    "game_model": r"(" + _MODEL_DE + r"|xbox)\s*$",
+    "game_prep": r"bei|im|in|nach|während|waehrend|vor|für|fuer|" + EN["game_prep"],
+    # "Spiele nicht dabei", "Spiele separat erhältlich", "Spiele laufen nicht", "Spiele werden nicht erkannt"
+    "game_gone": (r"nicht\b|nie\b|kein\w*|separat\w*|extra\s+(?:erh[aä]ltlich|erhaeltlich|zu\s+(?:kaufen|verkaufen|haben))|"
+                  r"einzeln\w*|fehl\w*|l[aä]uf\w*|laeuft|laden\b|l[aä]dt\b|laedt\b|start\w*|geh(?:en|t)\b|"
+                  r"funktionier\w*|werden\b|wird\b|w[uü]rden\b|k[oö]nn\w*|kann\b|h[aä]ng\w*|ruckel\w*|"
+                  r"st[uü]rz\w*|fr(?:ie|o)r\w*|auf\s+anfrage|gegen\s+aufpreis|" + EN["game_gone"]),
     "without": r"^\W*(ohne|without)\b",
     "accessory": (r"hülle|huelle|\bcase\b|skin|ständer|staender|halterung|ladestation|ladekabel|\bkabel\b|karton|"
                   r"verpackung|attrappe|powerbank|power bank|akku ?pack|ladegerät|ladegeraet|charger|\bstand\b|"
@@ -366,6 +392,7 @@ DE = {
         "score.bundle": " (Paket x{n})", "score.capped_market": " (gedeckelt auf Marktschätzung)",
         "score.extras": " (inkl. {items})", "score.extra_item": "{n} × {group} à {eur}",
         "score.games_item": "Spiele ({n}) pauschal {eur}",
+        "score.games_est": " (Marktschätzung {est} inkl. {games})",
         "score.bonus": " · Gewinn-Bonus +{n}", "score.stock": " · Teile auf Lager +{n}",
         "score.no_numbers": "Score der Bewertung (Zahlen für die Formel fehlen)",
         "note.damage": "{n} sichtbare Schäden −{pen}",
@@ -472,6 +499,9 @@ class Locale:
         self.without = re.compile(d["without"], re.I)
         self.game_words, self.game_single = d["game_words"], re.compile(d["game_single"], re.I)
         self.game_not, self.game_verb = d["game_not"], d["game_verb"]
+        self.game_one, self.game_prep, self.game_gone = d["game_one"], d["game_prep"], d["game_gone"]
+        self.game_model = re.compile(d["game_model"], re.I)
+        self.with_words = d["with_words"]
         self.with_word = re.compile(d["with_words"], re.I)
         self.part = d["part"]
         self.part_state = re.compile(d["part_state"], re.I)

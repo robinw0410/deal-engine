@@ -5,14 +5,17 @@ insights.py estimates sale prices and time-to-sell. Errors here never abort a ru
 
   python -m deal_engine history stats [search]
 """
+import re
 import sqlite3
 from datetime import date, timedelta
 from pathlib import Path
 from statistics import median
 
 from . import clock
+from . import locale as locale_mod
 from .filters import has_signal, passes
-from .groups import classified_market_group, from_classification
+from .groups import (bundle_qty, classified_market_group, drop_part, from_classification, has_extras, is_accessory,
+                     match_group)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS listing(
@@ -49,7 +52,10 @@ def connect(db):
 
 
 def connect_ro(db):
-    """Read-only connection to an existing history.db: creates no file and no schema, writes nothing."""
+    """Read-only connection to an existing history.db: no schema is created and nothing is written, the
+    database file stays byte for byte as it is (a missing one is an error, not created). The database is
+    in WAL mode, though: while such a connection reads, SQLite may create the helper files history.db-shm
+    and history.db-wal next to it (and needs write access to the directory for that, unless they exist)."""
     return sqlite3.connect(Path(db).resolve().as_uri() + "?mode=ro", uri=True, timeout=60)
 
 
@@ -124,29 +130,72 @@ def _upsert(con, search, it, grp, defect, exact=False):
         con.execute("INSERT OR REPLACE INTO price VALUES (?,?,?)", (key, today, p))
 
 
-def track(db, sc, items, log=print):
+def bundles_apart(mc):
+    """market.sample other than "all" (market.sample_mode; not imported here, market imports this module):
+    the market median of the search comes from the classification, and a device the word rules see listed
+    with extras ("PS4 mit 3 Spielen", groups.has_extras) is a bundle there whatever the model says. Such a
+    title then never has a tracking group (listing.grp stays NULL: track(), classify.correct_tracking), so
+    it stays out of the statistics of disappeared listings (sold_by_group) and is not checked one by one
+    (check_gone); it counts only through table classify in the bundle fallback of the market median."""
+    return ((mc or {}).get("sample") or "all") != "all"
+
+
+def _is_bundle(it, sig, c, groups, mc, loc):
+    """A bundle by the word rules that can count for the market median (bundles_apart): a device of a
+    group listed with extras, with a price, without defect signal and not hit by exclude_regex / the
+    locale's market_exclude. c: groups.from_classification of the title. With a plausible classification
+    it has to call the listing a device or bundle of a group with quantity 1; without one the word rules
+    must give a group and no accessory, spare part or bundle quantity."""
+    t = it.get("title") or ""
+    if it.get("price") is None or sig or not has_extras(t, loc):
+        return False
+    if re.search(mc.get("exclude_regex") or loc.market_exclude, t, re.I):
+        return False
+    if c is not None:
+        return c[0] in ("device", "bundle") and c[2] == 1
+    g = match_group(t, groups)
+    return bool(g) and not is_accessory(t, mc.get("accessory_regex"), loc) and bundle_qty(t, g, loc) == 1 \
+        and not drop_part(t, "skip", None, mc.get("part_regex"), loc)
+
+
+def track(db, sc, items, log=print, earmark_bundles=False):
     """Store search results. With market groups only listings of a group, otherwise everything
     that passes the filters. A stored, plausible LLM classification of the listing (same title)
     decides the group instead of the word rules, also when it says "no group" for a listing that
-    is already tracked (the stored group is then cleared, not kept)."""
+    is already tracked (the stored group is then cleared, not kept).
+
+    Searches with market.sample other than "all" (bundles_apart; nothing below applies to the others):
+    a device listed with extras by the word rules never gets a group. earmark_bundles (update_market
+    sets it for the group queries): such bundles (_is_bundle) are stored with grp NULL although the word
+    rules do not track them, so that classify.apply classifies their titles and the bundle fallback of
+    the market median (market.classified_sample) and market.sample_report see them. They share
+    classify.max_per_run with all other titles."""
     mc = sc.get("market") or {}
     groups, flt = mc.get("groups", []), sc.get("filters") or {}
+    apart = bool(groups) and bundles_apart(mc)
+    loc = locale_mod.get(sc.get("_locale")) if apart else None
     con = connect(db)
-    n = 0
+    n = n_bundle = 0
     with con:
         for it in items:
             sig = has_signal(it, flt)
             defect = None if sig is None else int(sig)
-            exact = False
+            exact, c = False, None
             if groups:
                 cls = classification(con, uid(it), it["title"])
-                exact = from_classification(it["title"], cls, groups) is not None
+                c = from_classification(it["title"], cls, groups)
+                exact = c is not None
                 g = classified_market_group(it["title"], it.get("price"), groups, cls, bool(sig),
                                             mc.get("accessory_regex"), sc.get("_locale"))
+                if g and apart and has_extras(it["title"], loc):
+                    g = None   # "PS4 mit 3 Spielen" classified as device/bundle of PS4: a bundle, no group
             else:
                 g = None
             if groups and not g:
-                if exact and con.execute("SELECT 1 FROM listing WHERE uid=?", (uid(it),)).fetchone():
+                if apart and earmark_bundles and _is_bundle(it, sig, c, groups, mc, loc):
+                    _upsert(con, sc["_name"], it, None, defect, exact=True)
+                    n_bundle += 1
+                elif exact and con.execute("SELECT 1 FROM listing WHERE uid=?", (uid(it),)).fetchone():
                     _upsert(con, sc["_name"], it, None, defect, exact=True)
                 continue
             if not groups and not passes(it, flt):
@@ -154,12 +203,14 @@ def track(db, sc, items, log=print):
             _upsert(con, sc["_name"], it, g["name"] if g else None, defect, exact=exact)
             n += 1
     con.close()
-    log(f"  tracking: {n} listings recorded")
+    log(f"  tracking: {n} listings recorded" + (f", {n_bundle} bundles noted for the market sample" if n_bundle else ""))
 
 
 def check_gone(db, sc, adapter, log=print):
     """Listings that have not shown up in results for 2+ days are checked one by one.
-    At most per_group per group and max_checks in total per run, to keep request volume low."""
+    At most per_group per group and max_checks in total per run, to keep request volume low.
+    With market.sample other than "all", bundles without a group (bundles_apart: listings noted for the
+    market sample only) are never checked: they cause no request and stay "active" with their last_seen."""
     from ..adapters.base import Blocked, check_result
     from .config import ConfigError
     tc = sc.get("track_checks") or {}
@@ -167,12 +218,16 @@ def check_gone(db, sc, adapter, log=print):
     today = clock.today_str()
     cutoff = str(clock.today() - timedelta(days=2))
     con = connect(db)
-    rows = con.execute("""SELECT uid, source_id, COALESCE(grp, '') FROM listing
+    rows = con.execute("""SELECT uid, source_id, COALESCE(grp, ''), title FROM listing
                           WHERE search=? AND source=? AND status='active' AND last_seen<=?
                             AND (checked IS NULL OR checked<?)
                           ORDER BY last_seen DESC""", (sc["_name"], adapter.name, cutoff, today)).fetchall()
+    mc = sc.get("market") or {}
+    if mc.get("groups") and bundles_apart(mc):
+        loc = locale_mod.get(sc.get("_locale"))
+        rows = [r for r in rows if r[2] or not has_extras(r[3], loc)]
     per, todo = {}, []
-    for key, sid, g in rows:
+    for key, sid, g, _ in rows:
         if per.get(g, 0) < per_group and len(todo) < max_checks:
             per[g] = per.get(g, 0) + 1
             todo.append((key, sid))

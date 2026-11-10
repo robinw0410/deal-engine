@@ -11,7 +11,8 @@ Only titles that the word rules could match at all go to the model, and each lis
 the word rules stay in effect. A result is only used if it is plausible: a group named by the
 model must have a match regex that hits the title (groups.from_classification), otherwise the
 word rules decide. classify.max_per_run limits the titles per search run (Budget, shared by
-both steps and all adapters of a run_search).
+both steps and all adapters of a run_search; with market.sample device_only also by the bundles the
+group queries note for the market median, see history.track).
 
 Search config: classify: {enabled: true, max_per_run: 600, batch: 150, model: haiku}
 Prompt: core/prompts/<locale>/classify.md, overridable with prompts.classify in the config.
@@ -19,7 +20,7 @@ Prompt: core/prompts/<locale>/classify.md, overridable with prompts.classify in 
 import json
 
 from . import clock, history, llm
-from .groups import classified_market_group, from_classification, match_group, matches_any
+from .groups import classified_market_group, from_classification, has_extras, match_group, matches_any
 from .util import load_json
 
 KINDS = {"device", "bundle", "accessory", "part", "other"}
@@ -57,15 +58,24 @@ def lookup(con, key, title=None):
     return history.classification(con, key, title)
 
 
-def correct_tracking(con, results, groups):
+def correct_tracking(con, results, groups, sc=None):
     """Write plausible classifications into the tracking table (listing.grp): only single devices
-    count in the group statistics. Implausible results leave the word-rule group alone."""
+    count in the group statistics. Implausible results leave the word-rule group alone.
+
+    sc: the search. With market.sample other than "all" (history.bundles_apart) a device the word rules
+    see listed with extras ("PS4 mit 3 Spielen") gets no group even if the model calls it a device or
+    bundle of one: it counts as a bundle for the market median through table classify, not in the
+    statistics of disappeared listings. Without sc, or with sample all, nothing changes."""
+    mc = (sc or {}).get("market") or {}
+    apart = history.bundles_apart(mc)
     with con:
         for key, cls in results.items():
             row = con.execute("SELECT title, price, COALESCE(defect,0) FROM listing WHERE uid=?", (key,)).fetchone()
             if not row or from_classification(row[0], cls, groups) is None:
                 continue
             g = classified_market_group(row[0], row[1], groups, cls, bool(row[2]))
+            if g and apart and has_extras(row[0], (sc or {}).get("_locale")):
+                g = None
             con.execute("UPDATE listing SET grp=? WHERE uid=?", (g["name"] if g else None, key))
 
 
@@ -167,7 +177,7 @@ def preselect(cfg, sc, titles, db, log=print, budget=None):
         items = todo[:budget.take(len(todo))]
         new, failed = classify_titles(cfg, sc, con, items, log) if items else ({}, 0)
         if new:
-            correct_tracking(con, new, groups)
+            correct_tracking(con, new, groups, sc)
     finally:
         con.close()
     rest = len(todo) - len(items)
@@ -209,7 +219,7 @@ def apply(cfg, sc, paths, log=print, budget=None):
 
     try:
         results, failed = classify_titles(cfg, sc, con, items, log)
-        correct_tracking(con, results, groups)
+        correct_tracking(con, results, groups, sc)
     finally:
         con.close()
     rest = len(todo) - len(items)

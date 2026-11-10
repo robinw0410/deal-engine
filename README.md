@@ -245,7 +245,9 @@ Extras with their own market group raise the **candidate threshold** of a device
 `extras: {"Controller": "controller\\w*|gamepads?"}`. The threshold becomes
 (device median + n × that group's median) × ratio, n counted from the title ("+ 2 Controller" = 2,
 "+ Controller" = 1, "mit zwei Controllern" = 2; "ohne Controller" and "Controller-Ladestation" = 0,
-at most 8). Extras without market data and anything no group covers add nothing (games: 0 €, or
+at most 8; every listed unit counts here, while the bundle adjustment of the market statistics
+deducts only the additional ones, see [Market prices](#market-prices)). Extras without market data
+and anything no group covers add nothing (games: 0 €, or
 a flat value with `market.game_value`, see [Market prices](#market-prices)). Only
 the candidate selection uses it, and since 0.2.8 `market_resale_estimate` includes n × the extra
 group's resale estimate (same sale_factor logic), so the score's resale cap counts the extras too
@@ -263,7 +265,8 @@ group's `match` regex hits (also excluded or vetoed ones), each listing only onc
 `history.db`, table `classify`, key `<adapter>-<source_id>`). After the merge, titles from tracking
 and the state that the word rules place in a group are classified as well. `max_per_run` is the
 limit for one search run: all adapters and the step after the merge share it (each model call
-still has a 10-minute timeout).
+still has a 10-minute timeout); with `market.sample: device_only` the bundles noted by the group
+queries count against it too.
 
 A stored result is only used when it is **plausible**: a group named by the model must have a
 `match` regex that hits the title, and that group's `veto` must not hit it (`exclude` is ignored
@@ -310,6 +313,10 @@ market:
   games_default: 2      # "mit Spielen" without a count
 ```
 
+The numbers are checked when a search is loaded: `device_min_n` and `games_default` must be
+integers ≥ 0, `game_value` and `game_value_max` numbers ≥ 0 (`game_value_max: null` = no maximum);
+anything else, also an empty value, is a configuration error.
+
 - **No model call at the market update.** `update_market` only reads the stored classification
   (`history.attach_classification`, read-only, item field `_cls`); a missing or unreadable
   `history.db` means "nothing classified" and the previous values stay. The titles of the group
@@ -319,36 +326,80 @@ market:
   classified as devices; until then it has none, or keeps the one computed with `all`.
 - **A device with games stays a bundle.** If the classification says `device` but the title lists
   games after a with-word (`has_extras`), the listing is treated as a bundle.
+- **Bundles the word rules recognise** ("PS4 mit 3 Spielen", "Switch + Zelda": `has_extras`) are
+  not tracked by the word rules, so nothing would ever classify them. With `device_only` the group
+  queries therefore **note** them in `history.db` (`history.track(..., earmark_bundles=True)`: a
+  title of a group with a price, without defect signal, not an accessory, spare part or bundle
+  quantity by the word rules, not hit by `market_exclude`), and the step after the merge classifies
+  them like every tracked title. What follows from that:
+  - They are stored **without a group** (`listing.grp` NULL) and stay that way: with `device_only`
+    a title with extras never gets a tracking group, also when the model calls it a `device` or
+    `bundle` of one (`history.bundles_apart`; applies to `history.track` and
+    `classify.correct_tracking`). So they count only through table `classify` in the bundle
+    fallback below and in `sample_report`, never in the statistics of disappeared listings
+    (`sold_by_group`, the sale price in the insights) and not for the text-based relist detection.
+    A bundle only the model sees ("Konsole Set komplett") keeps its group as before, and with
+    `sample: all` nothing changes at all.
+  - They cause **no extra requests**: `check_gone` skips bundles without a group, so they are
+    never checked one by one and stay `active` with their `last_seen` (`history stats` shows them
+    in the row without group).
+  - They **share `classify.max_per_run`** with all other titles of the run. With many bundles in
+    the group queries, the first runs after switching to `device_only` classify fewer other titles
+    (the rest follows on the next runs).
 - **Adjusted bundles.** With fewer than `device_min_n` single devices, bundles of the group
   (classification `bundle` with quantity 1, or such a device with games) are added at their price
-  minus the extras: n × the asking median of every `extras` group of the device group (see
-  [Market groups](#market-groups); the median just computed in this update, otherwise the previous
-  one — groups are computed in the order this needs) and the flat value of the games. The adjusted
-  price must be above 0 and within the group's `min`/`max`. A bundle with nothing to deduct, or with
-  extras of a group that has no market price, is left out rather than counted at its full price.
-- **Games** are counted from the title (`groups.games_count`, words of the locale): "mit 3 Spielen"
-  = 3, "+ 6 Spiele" = 6 (6 × 5 € = 30 €, the maximum), "mit Spielen" = `games_default`, "ohne
-  Spiele" = 0. A game named only by its title ("+ Zelda") is not counted, as nothing says how many
-  there are; "Spielekonsole", "game console" and model numbers ("PlayStation 4 Spiele") are no count.
+  minus the extras: the **additional** units of every `extras` group of the device group × that
+  group's asking median (see [Market groups](#market-groups); the median just computed in this
+  update, otherwise the previous one — groups are computed in the order this needs) and the flat
+  value of the games. One unit of an extras group belongs to the device (a console comes with a
+  controller): "PS4 mit 2 Controllern" at 180 € counts as 180 − 1 × the controller median, "PS4 mit
+  Controller" deducts nothing. `extras_included` on the device group changes that number (`0`, or
+  per extras group `{"Pro Controller": 0}` for an extra that never comes with the device). The
+  adjusted price must be above 0 and within the group's `min`/`max`. A bundle with nothing to
+  deduct, or with additional extras of a group that has no market price, is left out rather than
+  counted at its full price. **Not consistent with the evaluation of an offer:** the candidate
+  threshold and `market_resale_estimate` (`extras_value`, `extras_resale`, see Market groups) still
+  add **every** listed unit ("PS4 mit 2 Controllern" = device + 2 controllers); only the market
+  statistics deduct one less.
+- **Games** are counted from the title (`groups.games_count`, words of the locale). With a number
+  the mention counts wherever it stands: "mit 3 Spielen" = 3, "+ 6 Spiele" = 6 (6 × 5 € = 30 €, the
+  maximum), "PS4, 2 Controller, 8 Spiele" = 8, "zwölf Spiele" = 12. Without a number it counts only
+  as an extra in a with-clause: "mit Spielen", "+ Spiele", "inkl. vielen Spielen" =
+  `games_default`; "PS4 Spiele" alone = 0. Never counted: "ohne Spiele", "keine Spiele", a negation
+  or verb after the word ("Spiele nicht dabei", "Spiele separat erhältlich", "Spiele laufen nicht")
+  and circumstances ("stürzt bei Spielen ab", "friert im Spiel ein"), so a fault description is not
+  a bundle. A game named only by its title ("+ Zelda") is not counted, as nothing says how many
+  there are; "Spielekonsole", "game console" and model numbers ("mit PlayStation 4 Spielen" =
+  `games_default`) are no count; a number after "Switch" is read as a count ("Switch 2 Spiele" = 2).
 - **Evaluating a bundle offer** uses the same flat value: the candidate threshold and
   `market_resale_estimate` get count × `game_value` (at most `game_value_max`) on top of the device
   and its extras, the listing carries `market_games` (`{count, value}`, not shown on the page), and
-  `score_calc` names it when the resale cap applies ("inkl. 2 × Controller à 20 €, Spiele (6)
-  pauschal 30 €"). This applies with `sample: device_only`, or when `game_value` is set in a search
+  `score_calc` always names it: with the resale cap "(gedeckelt auf Marktschätzung) (inkl. 2 ×
+  Controller à 20 €, Spiele (6) pauschal 30 €)", otherwise "(Marktschätzung 198 € inkl. Spiele (6)
+  pauschal 30 €)" after the evaluator's resale price (a note only, the score is the same). This
+  applies with `sample: device_only`, or when `game_value` is set in a search
   that keeps `sample: all`; `game_value: 0` switches it off. A search with neither setting is
   evaluated exactly as before (games count 0 €).
 
-The market file, one entry per group (`sample`, `n_device` and `n_bundle` only with `device_only`;
-with `all` the entry has the three keys it always had):
+The market file, one entry per group (`sample`, `n_device`, `n_bundle` and `date` only with
+`device_only`; with `all` the entry has the three keys it always had):
 
 ```json
 {"_updated": "2026-11-10", "_ts": 1794300000.0,
- "Console A": {"median": 150, "p25": 140, "n": 14, "sample": "device_only", "n_device": 14, "n_bundle": 0},
- "Console B": {"median": 215, "p25": 200, "n": 9, "sample": "adjusted_bundles", "n_device": 6, "n_bundle": 3}}
+ "Console A": {"median": 150, "p25": 140, "n": 14, "sample": "device_only", "n_device": 14, "n_bundle": 0, "date": "2026-11-10"},
+ "Console B": {"median": 215, "p25": 200, "n": 9, "sample": "adjusted_bundles", "n_device": 6, "n_bundle": 3, "date": "2026-11-02"},
+ "Console C": {"median": 167, "p25": 150, "n": 31}}
 ```
 
-`n` is the sample size as before (`n_device` + `n_bundle`); `sample` says which way was used.
-A group that keeps its previous value keeps the entry as it was written.
+`n` is the sample size as before (`n_device` + `n_bundle`); `sample` says which way was used and
+`date` on which day the entry was computed. A group with too little data keeps its previous entry
+exactly as it was written: with its old `date` (Console B), or without `date` and `sample` if it
+still is the value computed with `all` (Console C: the old mixed median, which stays until enough
+listings of the group are classified). The log of the market update says so:
+
+```
+  market Console C: too little data (device 3, bundle 1, unclassified 12), keeping previous value (sample all, undated)
+```
 
 To see what the setting would change **before** switching, compare both ways on the tracked
 listings of the last days:
@@ -369,8 +420,21 @@ rows = market.sample_report(con, sc, days=30, loc=None)
 n_device, n_bundle}` with the search's setting, `device_only` if it still has `all`, or `None`),
 `device` and `bundle` (`{median, n}` of the classified single devices and bundles, bundle prices
 as listed), `bundle_share` and `unclassified` (listings of the group without a usable
-classification). It reads the listings of the search seen in the last `days` days without the
-stored defect flag; a classification counts only for the unchanged title.
+classification, among them noted bundles that are not classified yet). It reads the listings of
+the search seen in the last `days` days without the stored defect flag; a classification counts
+only for the unchanged title.
+
+**The report is not the run.** The report takes every tracked listing of the search seen in the
+last `days` days (search results and group queries of many runs); a market update only has the
+current hits of each group's query. A run therefore has smaller n than the report shows, falls
+back to adjusted bundles more often, and keeps the previous value ("too little data") in groups
+for which the report shows a value. Read the report as "what the classification says about this
+group", not as the numbers the next run will write.
+
+`history.connect_ro` opens the database read-only: no schema is created, nothing is written and
+`history.db` itself stays byte for byte the same. As the database is in WAL mode, SQLite may still
+create the helper files `history.db-shm` and `history.db-wal` next to it while reading (the
+directory must be writable for that, unless they exist).
 
 ### Spare parts
 
@@ -850,10 +914,20 @@ candidate selection and the score. A stated cost of 0 counts as free shipping.
   parts, hours, risk), and its weights reflect one person's repair-and-resell use case.
 - **`market.sample: device_only` depends on the classification.** Only tracked and classified
   listings count, so a group whose titles are never classified (no tracking, classification off, a
-  callable evaluator, budget used up) gets no value. Bundles the word rules recognise ("mit 3
-  Spielen") are not tracked from the group queries and so are rarely classified: the
-  `adjusted_bundles` fallback mostly sees bundles the model found among titles the word rules took
-  for single units. The flat value per game is a rough lump sum, not a price.
+  callable evaluator, budget used up) gets no new value and keeps its previous entry, possibly
+  the mixed one computed with `all` (no `date` in the market file; the log names it on every
+  update). Bundles the word rules recognise are noted by the group queries and classified after the
+  run, so they count from the second market update on; they use the same `classify.max_per_run`.
+  With `device_only`, titles with extras have no tracking group: they are not in the sale-price
+  statistics, are not checked one by one and are not found by the text-based relist detection.
+  `market-sample` reports on all tracked listings of the last days and so shows larger n than a
+  run has (see [Market prices](#market-prices)). The flat value per game is a rough lump sum, not
+  a price, and the bundle adjustment deducts one controller less than the evaluation of an offer
+  adds (one belongs to the console).
+- **Going back to an older engine version** leaves the field `market_games` in the stored listings
+  (versions before 0.2.15 neither refresh nor remove it; it is not shown and not used there) and
+  the keys `sample`, `n_device`, `n_bundle` and `date` in the market file until the group is
+  computed again. Listings noted in `history.db` for the market sample stay there without a group.
 - **Regex rules are language- and market-specific.** Groups, filters, accessory and bundle
   detection come with English defaults and have to be adapted to your market. The German locale
   rules are regex word lists as well and need tuning for real listings.

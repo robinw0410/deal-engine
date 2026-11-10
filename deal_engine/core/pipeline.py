@@ -121,7 +121,9 @@ def update_market(cfg, sc, adapter, P, log=print):
 
     With market.sample device_only the items get the stored LLM classification as "_cls" before the
     estimate (history.attach_classification: read from history.db, no model call; without a readable
-    history.db nothing is classified and the previous values are kept)."""
+    history.db nothing is classified and the previous values are kept), and the tracking of the group
+    queries also notes the bundles the word rules recognise ("PS4 mit 3 Spielen"), so that they get
+    classified after the run and can count as adjusted bundles (history.track, earmark_bundles)."""
     mc = sc.get("market") or {}
     groups = mc.get("groups") or []
     market = load_json(P["market"], {})
@@ -138,7 +140,8 @@ def update_market(cfg, sc, adapter, P, log=print):
         _search(adapter, {"keyword": g.get("keyword"), "max_price": g.get("max")}, home, rf, items, problems, loc)
         if sc.get("track"):
             try:
-                history.track(P["history"], sc, items.values(), log=lambda s: None)
+                history.track(P["history"], sc, items.values(), log=lambda s: None,
+                              earmark_bundles=market_sample_mode(mc) != "all")
             except Exception as e:   # tracking must never break a run
                 log(f"  tracking error: {e}")
         by_group[g["name"]] = list(items.values())
