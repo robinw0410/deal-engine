@@ -169,6 +169,54 @@ def extras_value(title, group, market, loc=None):
     return total, parts
 
 
+# words between a count and "games": "3 original PS4 Spiele", "2 Nintendo Switch games" (not "2 Controller und Spiele")
+_GAME_ADJ = (r"original\w*|orig\.?|weitere\w*|zusätzliche\w*|zusaetzliche\w*|additional|extra|neue\w*|new|tolle\w*|"
+             r"gute\w*|great|top|verschiedene\w*|diverse\w*|various|different|sony|microsoft|nintendo|"
+             r"xbox(?:\s+(?:one|360|series\s+[xs]))?|ps\s?[1-5]|playstation(?:\s*[1-5])?|switch|wii(?:\s?u)?|3?ds|pc")
+
+
+@lru_cache(maxsize=16)
+def _games_rx(code):
+    L = _loc(code)
+    num = r"\d{1,2}|" + "|".join(sorted(map(re.escape, L.number_words), key=len, reverse=True))
+    return re.compile(
+        r"(?:(?<![\w.,-])(" + num + r")\s*(?:[x×]\s*)?(?:(?:" + _GAME_ADJ + r")[\s-]+){0,3})?"   # count: "3", "3x", "drei"
+        r"(?<![a-zäöüß])(" + L.game_words + r")(?!\w)(?![\s-]*(?:" + L.game_not + r"))", re.I)
+
+
+def games_count(title, loc=None, default=2):
+    """How many games the title lists with the device, for the flat value per game (market.game_value):
+    "mit 3 Spielen" = 3, "+ 6 Spiele" = 6, "mit drei Spielen" = 3, "inkl. Spiel" = 1, "ohne Spiele" and
+    "keine Spiele" = 0; games without a count ("mit Spielen", "viele Spiele", "+ games") = `default`
+    (market.games_default). Several counted mentions add up ("3 Spiele + 2 Games" = 5), at most 50.
+
+    Only the locale's word for games counts (de "Spiel/Spiele/Spielen/Games", en "game(s)"): a game named
+    by its title alone ("Switch + Zelda") is 0, as nothing says how many there are. Not counted: "Spielekonsole",
+    "game console", "Game Boy", "zum Spielen"; a model number is no count ("PlayStation 4 Spiele" = default,
+    "FC 24 Spiel" = 1)."""
+    L = _loc(loc)
+    t = str(title or "")
+    counted, plain = [], []
+    for m in _games_rx(L.code).finditer(t):
+        before = t[:m.start()]
+        if re.search(r"\b(?:" + L.game_verb + r")\s+$", before, re.I):
+            continue   # "zum Spielen", "ready to game"
+        v = (m.group(1) or "").lower()
+        if v and L.not_qty.search(t[:m.start(1)]):
+            v = ""     # "PlayStation 4 Spiele", "PS 5 games": model number
+        if re.search(r"\b(?:" + L.negations + r")\s+" + ("$" if v else
+                     r"(?:[\w.-]+\s*(?:,|und|oder|and|or|&|/)\s*|\w+\s+)?$"), before, re.I):
+            continue   # "ohne Spiele", "keine Spiele", "ohne Controller und Spiele"
+        single = bool(L.game_single.fullmatch(m.group(2)))
+        if v:
+            k = L.number_words.get(v) or int(v)
+            counted.append(1 if single and k > 1 else k)   # "FC 24 Spiel": a title's number, one game
+        else:
+            plain.append(1 if single else max(0, int(default)))
+    n = sum(counted) if counted else max(plain, default=0)
+    return max(0, min(n, 50))
+
+
 PARTS_MODES = ("llm", "skip", "bundles", "accept")
 
 

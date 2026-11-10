@@ -26,14 +26,15 @@ from .config import ConfigError
 from .filters import fields_failed, has_signal, hook_failed, passes, title_failed
 from .groups import bundle_qty, drop_part, extras_value, from_classification, is_accessory, is_bundle_group, match_group
 from .listing import EXTRA_NAME, RESERVED, normalize, shipping_unknown
-from .market import extras_resale, due as market_due, refresh as market_refresh, resale_from_ask, settings as market_settings
+from .market import (extras_resale, due as market_due, games_value, refresh as market_refresh, resale_from_ask,
+                     sample_mode as market_sample_mode, settings as market_settings)
 from .util import load_json, num, save_json
 
 # fields copied from a candidate into a new state entry (if the evaluation did not set them);
 # extra fields of the listing (km, year, ...) are carried as well
 CARRY = ("distance_km", "shipping_possible", "shipping_cost_eur", "shipping_unknown", "shipping_note", "private",
          "condition", "auction_end", "best_offer", "market_median", "market_group", "market_n",
-         "market_resale_estimate", "market_extras")
+         "market_resale_estimate", "market_extras", "market_games")
 UNKNOWN_SHIPPING_COST = 15   # default for shipping.unknown_cost
 # fields the evaluation must not overwrite
 PROTECTED = {"id", "urls", "url", "source", "source_id", "sources", "price", "price_history", "first_seen",
@@ -116,7 +117,11 @@ def search_all(cfg, sc, adapter, extra=(), log=print):
 
 
 def update_market(cfg, sc, adapter, P, log=print):
-    """Market prices per group from dedicated queries (working units of each group)."""
+    """Market prices per group from dedicated queries (working units of each group).
+
+    With market.sample device_only the items get the stored LLM classification as "_cls" before the
+    estimate (history.attach_classification: read from history.db, no model call; without a readable
+    history.db nothing is classified and the previous values are kept)."""
     mc = sc.get("market") or {}
     groups = mc.get("groups") or []
     market = load_json(P["market"], {})
@@ -137,6 +142,10 @@ def update_market(cfg, sc, adapter, P, log=print):
             except Exception as e:   # tracking must never break a run
                 log(f"  tracking error: {e}")
         by_group[g["name"]] = list(items.values())
+    if market_sample_mode(mc) != "all":
+        n_cls = history.attach_classification(P["history"], [it for its in by_group.values() for it in its], log)
+        log(f"  market sample {market_sample_mode(mc)}: {n_cls} of {sum(map(len, by_group.values()))} "
+            f"listings classified")
     new = market_refresh(market, by_group, groups, sc.get("filters") or {}, mc, log, loc)
     save_json(P["market"], new)
     return new
@@ -415,7 +424,13 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
                 # the resale estimate gets the extras too (same sale_factor logic), the score cap uses it
                 extra_resale, it["market_extras"] = extras_resale(extra_parts, market, s["sale_factor"])
                 it["market_resale_estimate"] += extra_resale
-            if it.get("price") is not None and total > (m["median"] * qty + extra_eur) * float(ratio):
+            # games: a flat value each (market.game_value; only with market.sample device_only or when
+            # set, otherwise 0), for the threshold and the resale estimate alike
+            games_eur, games_n = games_value(it["title"], mc, loc)
+            if games_n:
+                it["market_games"] = {"count": games_n, "value": games_eur}
+                it["market_resale_estimate"] += games_eur
+            if it.get("price") is not None and total > (m["median"] * qty + extra_eur + games_eur) * float(ratio):
                 too_expensive += 1
                 continue
         elif sig is False:

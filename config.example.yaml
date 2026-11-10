@@ -81,6 +81,12 @@ searches:
       sale_factor: 0.85                # asking median -> realistic resale price
       flip_ratio: 0.7                  # working units: candidate below median x 0.7
       defect_price_ratio: 0.6          # defective units: candidate below median x 0.6
+      # sample: device_only            # median only from listings the LLM classification calls a single device
+      #                                # (default: all = word rules; needs track, classify and the LLM evaluator)
+      # device_min_n: 8                # device_only: with fewer devices, bundles are added at price minus extras
+      # game_value: 5                  # flat value per game of a bundle (with device_only, or when set)
+      # game_value_max: 30             # at most this much per listing
+      # games_default: 2               # "with games" without a count
       # first group whose match hits and whose exclude does not; an excluded title falls through to the
       # next groups. veto (optional): if match and veto both hit, the title gets no group at all
       # (no fall-through), e.g. "PS5 headset" must not be compared with the PS5 price, while

@@ -109,6 +109,11 @@ def search(cfg, name):
     from .groups import PARTS_MODES
     if sc["parts"] not in PARTS_MODES:
         raise ConfigError(f"search '{name}': parts must be one of {', '.join(PARTS_MODES)}, not {sc['parts']!r}")
+    from .market import sample_mode
+    try:
+        sample_mode(sc.get("market"))
+    except ValueError as e:
+        raise ConfigError(f"search '{name}': {e}")
     part_rx = (sc.get("market") or {}).get("part_regex")
     if part_rx is not None:
         try:

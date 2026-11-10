@@ -7,6 +7,7 @@ insights.py estimates sale prices and time-to-sell. Errors here never abort a ru
 """
 import sqlite3
 from datetime import date, timedelta
+from pathlib import Path
 from statistics import median
 
 from . import clock
@@ -47,6 +48,11 @@ def connect(db):
     return con
 
 
+def connect_ro(db):
+    """Read-only connection to an existing history.db: creates no file and no schema, writes nothing."""
+    return sqlite3.connect(Path(db).resolve().as_uri() + "?mode=ro", uri=True, timeout=60)
+
+
 TITLE_LEN = 200   # titles are stored shortened to this length
 
 
@@ -61,6 +67,30 @@ def classification(con, key, title=None):
     if not r or (title is not None and r[0] != (title or "")[:TITLE_LEN]):
         return None
     return r[1], r[2] or 1, r[3]
+
+
+def attach_classification(db, items, log=print):
+    """Set it["_cls"] on every item (dicts with source, source_id, title): the stored LLM classification
+    (grp, qty, kind) of the listing, or None if there is none or the title changed. Read-only, calls no
+    model. A missing or unreadable history.db never raises: all items then count as not classified.
+    Returns the number of classified items."""
+    items = list(items)
+    for it in items:
+        it["_cls"] = None
+    try:
+        if not Path(db).exists():
+            return 0
+        con = connect_ro(db)
+        try:
+            found = [classification(con, uid(it), it.get("title")) for it in items]
+        finally:
+            con.close()
+    except Exception as e:   # like tracking: never break a run
+        log(f"  stored classification not readable, listings count as not classified: {type(e).__name__}: {e}")
+        return 0
+    for it, cls in zip(items, found):
+        it["_cls"] = cls
+    return sum(1 for cls in found if cls is not None)
 
 
 def _flag(v):

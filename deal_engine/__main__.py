@@ -5,6 +5,8 @@
   python -m deal_engine score <search> [--show]     recompute scores (--show: print, don't save)
   python -m deal_engine render [search ...]         render the HTML pages
   python -m deal_engine history [search]            tracking statistics per group
+  python -m deal_engine market-sample <search> [--days 30]   market median per group: word rules (sample all)
+                                                    against classified single devices (device_only)
   python -m deal_engine validate <file.json>        check a listings file against docs/listing-format.md
   python -m deal_engine adapters                    list the adapters this config can use
 
@@ -35,6 +37,9 @@ def main(argv=None):
     w.add_argument("searches", nargs="*")
     h = sub.add_parser("history")
     h.add_argument("search", nargs="?")
+    ms = sub.add_parser("market-sample")
+    ms.add_argument("search")
+    ms.add_argument("--days", type=int, default=30)
     v = sub.add_parser("validate")
     v.add_argument("file")
     a = ap.parse_args(argv)
@@ -109,6 +114,21 @@ def _with_config(a):
     if a.cmd == "history":
         from .core import history
         history.stats(config_mod.paths(cfg, a.search or "x")["history"], a.search)
+        return 0
+    if a.cmd == "market-sample":
+        from .core import history, market
+        from .core.util import load_json
+        sc = config_mod.search(cfg, a.search)
+        P = config_mod.paths(cfg, a.search)
+        if not P["history"].exists():
+            print(f"{a.search}: no history.db yet (track: true and at least one run)", file=sys.stderr)
+            return 1
+        con = history.connect_ro(P["history"])   # read-only: nothing is written
+        try:
+            rows = market.sample_report(con, sc, a.days, market=load_json(P["market"], {}))
+        finally:
+            con.close()
+        print(market.format_sample_report(rows, a.days))
         return 0
     return 2
 

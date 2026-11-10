@@ -171,6 +171,13 @@ EN = {
     # extras that make a device listing a bundle ("PS4 with 6 games"): not counted as a single unit in the
     # market statistics (groups.has_extras)
     "bundle_extras": r"\bgames?\b|fifa|call of duty|zelda|mario|pok[eé]mon",
+    # games counted with a flat value (groups.games_count, market.game_value): the word for games in any
+    # form, the forms that mean one game, what makes the word something else when it follows ("game
+    # console", "Game Boy"), and words before it that make it a verb ("ready to game")
+    "game_words": r"(?:video[- ]?)?games?",
+    "game_single": r"(?:video[- ]?)?game",
+    "game_not": r"&\s*watch|boy|gear|pass|consoles?|pads?|capture|cube|controllers?|cards?|keys?|codes?",
+    "game_verb": r"to",
     "without": r"^\W*(without|ohne)\b",
     "accessory": (r"\bcase\b|\bcover\b|skin|sleeve|\bstand\b|holder|mount|charging\s*(station|dock|stand|kit|cable|kabel)|charger|"
                   r"\bcable\b|\busb\b|empty box|\bbox only\b|packaging|dummy|power ?bank|battery pack|"
@@ -220,6 +227,7 @@ EN = {
         "score.how_shipping": "shipping", "score.how_pickup": "pickup {km} km",
         "score.bundle": " (bundle x{n})", "score.capped_market": " (capped at market estimate)",
         "score.extras": " (incl. {items})", "score.extra_item": "{n} × {group} at {eur}",
+        "score.games_item": "games ({n}) at a flat {eur}",
         "score.bonus": " · profit bonus +{n}", "score.stock": " · parts in stock +{n}",
         "score.no_numbers": "evaluator score (numbers for the formula are missing)",
         "note.damage": "{n} visible damages -{pen}",
@@ -307,6 +315,11 @@ DE = {
     "with_words": (r"\bmit\b|\bohne\b|\binkl\b\.?|\binklusive\b|\bsamt\b|\bplus\b|\bund\b|\bwith\b|\bwithout\b|\bincl\b\.?|"
                    r"\bincluding\b|\+|&"),
     "bundle_extras": r"\bspiel\w*|\bgames?\b|fifa|\bfc\s?2\d|call of duty|zelda|mario|pok[eé]mon",
+    "game_words": (r"spiele-?(?:sammlung|paket|bundle|set)|(?:video|konsolen)?-?spiel(?:en|es|e|s)?|"
+                   r"(?:video[- ]?)?games?"),
+    "game_single": r"(?:video|konsolen)?-?spiel(?:es|s)?|(?:video[- ]?)?game",
+    "game_not": EN["game_not"] + r"|konsolen?|st(?:and|ände|aende)|zeug",
+    "game_verb": r"zum|zu|beim|am|to",
     "without": r"^\W*(ohne|without)\b",
     "accessory": (r"hülle|huelle|\bcase\b|skin|ständer|staender|halterung|ladestation|ladekabel|\bkabel\b|karton|"
                   r"verpackung|attrappe|powerbank|power bank|akku ?pack|ladegerät|ladegeraet|charger|\bstand\b|"
@@ -352,6 +365,7 @@ DE = {
         "score.how_shipping": "Versand", "score.how_pickup": "Abholung {km} km",
         "score.bundle": " (Paket x{n})", "score.capped_market": " (gedeckelt auf Marktschätzung)",
         "score.extras": " (inkl. {items})", "score.extra_item": "{n} × {group} à {eur}",
+        "score.games_item": "Spiele ({n}) pauschal {eur}",
         "score.bonus": " · Gewinn-Bonus +{n}", "score.stock": " · Teile auf Lager +{n}",
         "score.no_numbers": "Score der Bewertung (Zahlen für die Formel fehlen)",
         "note.damage": "{n} sichtbare Schäden −{pen}",
@@ -456,6 +470,8 @@ class Locale:
         self.accessory = d["accessory"]
         self.bundle_extras = re.compile(d["bundle_extras"], re.I)
         self.without = re.compile(d["without"], re.I)
+        self.game_words, self.game_single = d["game_words"], re.compile(d["game_single"], re.I)
+        self.game_not, self.game_verb = d["game_not"], d["game_verb"]
         self.with_word = re.compile(d["with_words"], re.I)
         self.part = d["part"]
         self.part_state = re.compile(d["part_state"], re.I)

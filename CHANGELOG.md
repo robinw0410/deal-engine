@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.2.15 – 2026-11-10
+
+### Added
+
+- **`market.sample: device_only`** (per search, default `all` = unchanged): median, p25 and n of a
+  market group only from listings the stored LLM classification calls `device` with quantity 1 of
+  this group (plausible as in `groups.from_classification`). Bundles, accessories, parts, `other`
+  and listings not classified yet do not count; a classified device whose title lists games after a
+  with-word counts as a bundle. Defect signal, `market_exclude`, the group's price range, the
+  fresh/private selection and `min_n` apply as before. No model is called at the market update:
+  `update_market` attaches the stored classification to the items as `_cls`
+  (**`history.attach_classification`**, read-only; a missing or unreadable `history.db` means
+  "not classified", never an aborted run). An unknown `sample` value is a configuration error.
+- **Adjusted bundles**: with fewer than **`market.device_min_n`** (default 8) single devices,
+  bundles of the group are added at their price minus the extras (**`market.bundle_adjust`**):
+  n × the asking median of the group's `extras` groups (the median computed in the same update,
+  otherwise the previous one; **`market.estimate_groups`** orders the groups accordingly) and a flat
+  value per game. Adjusted prices must be above 0 and within the group's range; a bundle with
+  nothing to deduct or with extras that have no market price is left out.
+- **Flat value for games**: **`market.game_value`** (default 5 € per game), **`market.game_value_max`**
+  (default 30 € per listing), **`market.games_default`** (default 2 for "mit Spielen" without a
+  count). **`groups.games_count(title, loc, default)`** counts them with the locale's words (de
+  "Spiel/Spiele/Spielen/Games", en "game(s)"): "mit 3 Spielen" = 3, "+ 6 Spiele" = 6, "ohne Spiele" =
+  0, number words; a game named only by its title, "Spielekonsole"/"game console" and model numbers
+  are no count.
+- **Evaluation of bundle offers**: the same flat value is added to the candidate threshold and to
+  `market_resale_estimate` (selection and insights, next to the extras). The listing carries
+  **`market_games`** (`{count, value}`), `score_calc` names it when the resale cap applies ("Spiele
+  (6) pauschal 30 €"), and the evaluation prompts say it is already in the estimate. Only with
+  `sample: device_only` or when `game_value` is set (0 switches it off); searches with neither
+  setting are evaluated exactly as before.
+- **Market file**: with `device_only` a group entry also has `"sample"` (`"device_only"` |
+  `"adjusted_bundles"`), `"n_device"` and `"n_bundle"` (`n` = both); with `all` the format is
+  unchanged.
+- **`market.sample_report(con, sc, days=30, loc=None, today=None, market=None)`**: before/after per
+  group from the listings in `history.db` (read-only connection is enough): `before` with `all`,
+  `after` with the search's setting (`device_only` if it still has `all`), `device` and `bundle`
+  (median and n by classification), `bundle_share`, `unclassified`. Command line:
+  `python -m deal_engine market-sample <search> [--days 30]`; `history.connect_ro(db)`.
+
 ## 0.2.14 – 2026-11-06
 
 ### Added

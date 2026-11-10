@@ -20,7 +20,8 @@ nur die Kriterien, Gerätegruppen, Stufen, Bewertungsregeln und die Felder verwe
    ANGEBOTSPREISE, keine Verkaufspreise. `market_resale_estimate` als Basis für den
    Verkaufspreis nehmen und nur für Zustand, Speicher oder Zubehör anpassen. Steht `market_extras`
    dabei, sind diese Extras (n × `resale`, z. B. weitere Controller) in `market_resale_estimate`
-   schon enthalten: nicht nochmals aufschlagen. Ohne Marktdaten:
+   schon enthalten: nicht nochmals aufschlagen. Dasselbe gilt für `market_games` (Pauschale `value`
+   für `count` Spiele). Ohne Marktdaten:
    den Verkaufspreis vorsichtig schätzen (unteres Drittel der Angebote) und in `issues`
    "Verkaufspreis geschätzt" vermerken.
    `distance_km` ist die geschätzte Straßenentfernung von zu Hause, `shipping_possible`, ob die

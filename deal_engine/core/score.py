@@ -122,12 +122,16 @@ def compute(l, c, caps=True):
         ship, how = float(c["unknown_cost"]), loc.t("ship.unknown", cost=f"{c['unknown_cost']:g}")
     capped = loc.t("score.bundle", n=l["bundle_qty"]) if l.get("bundle_qty") else ""
     extras = [x for x in (l.get("market_extras") or []) if isinstance(x, dict) and x.get("resale")]
+    games = l.get("market_games") if isinstance(l.get("market_games"), dict) else {}
     if est and resale > est * c["resale_cap"]:
         resale, capped = round(est * c["resale_cap"]), capped + loc.t("score.capped_market")
-        if extras:   # the capped price comes from the market estimate, which includes the extras
-            capped += loc.t("score.extras", items=", ".join(
-                loc.t("score.extra_item", n=x.get("count", 1), group=x.get("group", "?"), eur=eur(x["resale"]))
-                for x in extras))
+        # the capped price comes from the market estimate, which includes the extras and the games
+        incl = [loc.t("score.extra_item", n=x.get("count", 1), group=x.get("group", "?"), eur=eur(x["resale"]))
+                for x in extras]
+        if num(games.get("value")):
+            incl.append(loc.t("score.games_item", n=games.get("count", "?"), eur=eur(games["value"])))
+        if incl:
+            capped += loc.t("score.extras", items=", ".join(incl))
     mh = c["min_hours"]
     hours = max(hours, mh.get(kind, 1.0) if isinstance(mh, dict) else mh) + travel_h
     profit = resale - price - parts - ship
