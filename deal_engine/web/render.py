@@ -501,45 +501,123 @@ footer{margin-top:40px;color:var(--muted);font-size:.78rem}
 
 JS = """
 (function(){
-  var UI = window.DE_UI || {groups:[["tier","Tier"]],chips:[],toggles:[],orders:{},t:{}};
-  var T = UI.t || {};
-  var pool = document.getElementById('pool'), out = document.getElementById('groups');
+  // Facets (data-fac on the cards): a value is a string or a list of strings (a listing on two
+  // platforms has src: ["ebay", "vinted"]). Within a facet the selected values are ORed (a card
+  // matches if one of its values is selected), across facets, toggles and search they are ANDed.
+  // Counts next to the values are static: cards per value over all cards of the page (a card with
+  // two values counts for both), independent of the other filters.
+  // DE_UI.top: facets with their own bar in #topbar (default: src); a bar or chip row is shown
+  // from 2 values on. DE_UI.labels: display names per facet value. DE_UI.url: facets kept in the
+  // query string (?src=vinted,ebay); on load the URL wins over the saved view (localStorage), each
+  // change adds a history entry, back/forward restore the selection from the URL.
+  var UI = window.DE_UI || {};
+  var T = UI.t || {}, GROUPS = UI.groups && UI.groups.length ? UI.groups : [["tier", T.tier || "Tier"]];
+  var CHIPS = UI.chips || [], TOGGLES = UI.toggles || [], ORDERS = UI.orders || {}, LABELS = UI.labels || {};
+  var URLK = UI.url || [], HAS = Object.prototype.hasOwnProperty;
+  var $ = function(id){ return document.getElementById(id); };
+  var pool = $('pool'), out = $('groups'), topbar = $('topbar');
+  pool.hidden = true;   // without JavaScript the pool shows all cards
+  function parse(s){ try { return JSON.parse(s || '{}') || {}; } catch(e) { return {}; } }
   var cards = [].slice.call(pool.children).map(function(el){
-    return {el:el, f:JSON.parse(el.dataset.fac||'{}'), t:JSON.parse(el.dataset.tg||'{}'), q:el.dataset.q||''};
+    return {el:el, f:parse(el.dataset.fac), t:parse(el.dataset.tg), q:el.dataset.q||''};
   });
   var KEY = 'de-view-' + location.pathname, st;
   try { st = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch(e) { st = null; }
-  st = st || {};
-  st.q = ''; st.group = st.group || UI.groups[0][0]; st.chips = st.chips || {}; st.tg = st.tg || {};
-  var $ = function(id){ return document.getElementById(id); };
+  st = st && typeof st === 'object' ? st : {};
+  st.q = ''; st.tg = st.tg && typeof st.tg === 'object' ? st.tg : {};
+  if (!GROUPS.some(function(g){ return g[0] === st.group; })) st.group = GROUPS[0][0];
   function save(){ try { localStorage.setItem(KEY, JSON.stringify({group:st.group, chips:st.chips, tg:st.tg, sort:$('sort').value})); } catch(e) {} }
-  function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+  function esc(s){ return String(s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+  function vals(x, k){   // the card's values of facet k as a list of distinct strings
+    var v = x.f[k], a = Array.isArray(v) ? v : v === undefined || v === null || v === '' ? [] : [v], r = [];
+    a.forEach(function(s){ if (s === null || s === undefined) return; s = String(s); if (s !== '' && r.indexOf(s) < 0) r.push(s); });
+    return r;
+  }
+  function label(k, v){ var m = LABELS[k]; return m && HAS.call(m, v) && m[v] !== null ? String(m[v]) : v; }
+  function rank(k, a, b){
+    var o = ORDERS[k]; if (!o) return 0;
+    var ia = o.indexOf(a), ib = o.indexOf(b); if (ia < 0) ia = 1e9; if (ib < 0) ib = 1e9; return ia - ib;
+  }
+  function facetName(k){
+    var all = CHIPS.concat(GROUPS);
+    if (k === 'src' && T.platform) return T.platform;
+    for (var i = 0; i < all.length; i++) if (all[i][0] === k) return all[i][1];
+    return k === 'src' ? 'Platform' : k;
+  }
 
-  $('groupby').innerHTML = UI.groups.map(function(g){ return '<option value="'+g[0]+'">'+esc(g[1])+'</option>'; }).join('');
+  $('groupby').innerHTML = GROUPS.map(function(g){ return '<option value="'+esc(g[0])+'">'+esc(g[1])+'</option>'; }).join('');
   $('groupby').value = st.group;
   if (st.sort) $('sort').value = st.sort;
 
-  function counts(fk){ var c = {}; cards.forEach(function(x){ var v = x.f[fk]; c[v] = (c[v]||0)+1; }); return c; }
-  function ordered(fk, vals){
-    var o = (UI.orders||{})[fk];
-    return vals.sort(function(a,b){
-      if (o) { var ia=o.indexOf(a), ib=o.indexOf(b); if (ia<0) ia=999; if (ib<0) ib=999; if (ia!==ib) return ia-ib; }
-      return a.localeCompare(b);
+  var known = Object.create(null);   // facet key -> values that have a button
+  function row(k, name, top){
+    var c = Object.create(null);
+    cards.forEach(function(x){ vals(x, k).forEach(function(v){ c[v] = (c[v] || 0) + 1; }); });
+    var vs = Object.keys(c).sort(function(a, b){   // configured order, then (top bars) count, then name
+      return rank(k, a, b) || (top ? c[b] - c[a] : 0) || label(k, a).localeCompare(label(k, b));
     });
+    if (vs.length < 2) return '';
+    known[k] = vs;
+    return '<div class="fchips'+(top ? ' top' : '')+'" data-k="'+esc(k)+'" role="group" aria-label="'+esc(name)+'">'
+      + '<span class="lbl">'+esc(name)+':</span><button type="button" class="fchip all" data-all="1">'+esc(T.all || 'All')+'</button>'
+      + vs.map(function(v){
+        return '<button type="button" class="fchip" data-v="'+esc(v)+'">'+esc(label(k, v))+'<small>'+c[v]+'</small></button>';
+      }).join('') + '</div>';
   }
-  $('chips').innerHTML = UI.chips.map(function(c){
-    var cnt = counts(c[0]), vals = ordered(c[0], Object.keys(cnt));
-    if (vals.length < 2) return '';
-    return '<div class="fchips" data-k="'+c[0]+'"><span class="lbl">'+esc(c[1])+':</span>' + vals.map(function(v){
-      return '<button type="button" class="fchip" data-v="'+esc(v)+'">'+esc(v)+'<small>'+cnt[v]+'</small></button>';
-    }).join('') + '</div>';
-  }).join('');
-  $('toggles').innerHTML = UI.toggles.map(function(t){ return '<button type="button" class="tgl" data-k="'+t[0]+'">'+esc(t[1])+'</button>'; }).join('');
+  var TOP = (UI.top || ['src']).map(function(e){ return Array.isArray(e) ? e : [e, facetName(e)]; });
+  var topKeys = TOP.map(function(e){ return e[0]; });
+  var topHtml = TOP.map(function(e){ return row(e[0], e[1], true); }).join('');
+  var chipHtml = CHIPS.filter(function(c){ return topKeys.indexOf(c[0]) < 0; }).map(function(c){ return row(c[0], c[1], false); }).join('');
+  if (topbar) { topbar.innerHTML = topHtml; topbar.hidden = !topHtml; } else chipHtml = topHtml + chipHtml;   // older page
+  $('chips').innerHTML = chipHtml;
+  $('toggles').innerHTML = TOGGLES.map(function(t){ return '<button type="button" class="tgl" data-k="'+esc(t[0])+'">'+esc(t[1])+'</button>'; }).join('');
+
+  function clean(sel){   // keep only facets with buttons and values that exist on the page
+    var r = {};
+    if (!sel || typeof sel !== 'object') return r;
+    Object.keys(sel).forEach(function(k){
+      if (!known[k] || !Array.isArray(sel[k])) return;
+      var a = [];
+      sel[k].forEach(function(v){ v = String(v); if (known[k].indexOf(v) >= 0 && a.indexOf(v) < 0) a.push(v); });
+      if (a.length) r[k] = a;
+    });
+    return r;
+  }
+  function dec(s){ try { return decodeURIComponent(s.split('+').join(' ')); } catch(e) { return ''; } }
+  function params(){ return location.search.replace(/^[?]/, '').split('&').filter(Boolean); }
+  function pkey(p){ var i = p.indexOf('='); return dec(i < 0 ? p : p.slice(0, i)); }
+  function readURL(){   // selection of the URL facets, null when the URL has none of them
+    var sel = {}, found = false;
+    params().forEach(function(p){
+      var k = pkey(p), i = p.indexOf('=');
+      if (URLK.indexOf(k) < 0) return;
+      found = true;
+      sel[k] = (sel[k] || []).concat(i < 0 ? [] : p.slice(i + 1).split(',').map(dec));
+    });
+    return found ? clean(sel) : null;
+  }
+  function fromURL(sel){ URLK.forEach(function(k){ if (sel[k]) st.chips[k] = sel[k]; else delete st.chips[k]; }); }
+  function syncURL(mode){   // mode: 'push' (user change), 'replace' (first load) or nothing (back/forward)
+    if (!mode || !URLK.length || !window.history || !history.pushState) return;
+    var keep = params().filter(function(p){ return URLK.indexOf(pkey(p)) < 0; });
+    URLK.forEach(function(k){
+      var on = st.chips[k];
+      if (on && on.length) keep.push(encodeURIComponent(k) + '=' + on.map(encodeURIComponent).join(','));
+    });
+    var s = keep.length ? '?' + keep.join('&') : '';
+    if (s === location.search) return;
+    try { history[mode === 'push' ? 'pushState' : 'replaceState'](null, '', location.pathname + s + location.hash); } catch(e) {}
+  }
+  st.chips = clean(st.chips);
+  var u = readURL(); if (u) fromURL(u);
 
   function syncButtons(){
-    [].forEach.call(document.querySelectorAll('.fchips'), function(row){
-      var k = row.dataset.k, on = st.chips[k] || [];
-      [].forEach.call(row.querySelectorAll('.fchip'), function(b){ b.classList.toggle('on', on.indexOf(b.dataset.v) >= 0); });
+    [].forEach.call(document.querySelectorAll('.fchips'), function(r){
+      var on = st.chips[r.dataset.k] || [];
+      [].forEach.call(r.querySelectorAll('.fchip'), function(b){
+        var x = b.dataset.all ? !on.length : on.indexOf(b.dataset.v) >= 0;
+        b.classList.toggle('on', x); b.setAttribute('aria-pressed', x ? 'true' : 'false');
+      });
     });
     [].forEach.call(document.querySelectorAll('.tgl'), function(b){ b.classList.toggle('on', !!st.tg[b.dataset.k]); });
   }
@@ -552,43 +630,57 @@ JS = """
       return desc ? y-x : x-y;
     });
   }
+  function hit(x, k, on){ var v = vals(x, k); for (var i = 0; i < v.length; i++) if (on.indexOf(v[i]) >= 0) return true; return false; }
 
-  function render(){
+  function render(mode){
     var q = st.q.trim().toLowerCase().split(/\\s+/).filter(Boolean);
     var vis = cards.filter(function(x){
-      for (var k in st.chips) { var on = st.chips[k]; if (on && on.length && on.indexOf(x.f[k]) < 0) return false; }
+      for (var k in st.chips) { var on = st.chips[k]; if (on && on.length && !hit(x, k, on)) return false; }
       for (var t in st.tg) { if (st.tg[t] && !x.t[t]) return false; }
       for (var i=0; i<q.length; i++) { if (x.q.indexOf(q[i]) < 0) return false; }
       return true;
     });
-    var groups = {}; vis.forEach(function(x){ var g = x.f[st.group] || T.other || 'Other'; (groups[g] = groups[g] || []).push(x); });
-    var names = ordered(st.group, Object.keys(groups));
-    if (!(UI.orders||{})[st.group] && st.group !== 'tier') names.sort(function(a,b){ return groups[b].length - groups[a].length || a.localeCompare(b); });
+    // a card with several values of the group facet goes under the first one
+    var other = T.other || 'Other', groups = Object.create(null);
+    vis.forEach(function(x){ var g = vals(x, st.group)[0] || other; (groups[g] = groups[g] || []).push(x); });
+    var names = Object.keys(groups).sort(function(a, b){
+      if (!ORDERS[st.group] && st.group !== 'tier') return groups[b].length - groups[a].length || label(st.group, a).localeCompare(label(st.group, b));
+      return rank(st.group, a, b) || label(st.group, a).localeCompare(label(st.group, b));
+    });
     out.innerHTML = '';
     names.forEach(function(n, i){
       var d = document.createElement('details'); d.className = 'tier'; d.open = names.length <= 4 || i < 2;
-      d.innerHTML = '<summary>'+esc(n)+' <small>'+groups[n].length+'</small></summary><div class="list"></div>';
+      d.innerHTML = '<summary>'+esc(label(st.group, n))+' <small>'+groups[n].length+'</small></summary><div class="list"></div>';
       var list = d.querySelector('.list');
       sortCards(groups[n]).forEach(function(x){ list.appendChild(x.el); });
       out.appendChild(d);
     });
     $('empty').hidden = vis.length > 0;
     $('count').textContent = vis.length === cards.length ? cards.length + ' ' + (T.listings || 'listings') : vis.length + ' ' + (T.of || 'of') + ' ' + cards.length;
-    syncButtons(); save();
+    syncButtons(); save(); syncURL(mode);
   }
 
-  $('q').addEventListener('input', function(){ st.q = this.value; render(); });
-  $('groupby').addEventListener('change', function(){ st.group = this.value; render(); });
-  $('sort').addEventListener('change', render);
-  $('chips').addEventListener('click', function(e){
-    var b = e.target.closest('.fchip'); if (!b) return;
-    var k = b.parentNode.dataset.k, v = b.dataset.v, on = st.chips[k] = st.chips[k] || [], i = on.indexOf(v);
-    if (i >= 0) on.splice(i, 1); else on.push(v); render();
-  });
+  $('q').addEventListener('input', function(){ st.q = this.value; render('push'); });
+  $('groupby').addEventListener('change', function(){ st.group = this.value; render('push'); });
+  $('sort').addEventListener('change', function(){ render('push'); });
+  function chipClick(e){
+    var b = e.target.closest('.fchip'), r = b && b.closest('.fchips'); if (!r) return;
+    var k = r.dataset.k;
+    if (b.dataset.all) delete st.chips[k];
+    else {
+      var v = b.dataset.v, on = st.chips[k] = st.chips[k] || [], i = on.indexOf(v);
+      if (i >= 0) on.splice(i, 1); else on.push(v);
+      if (!on.length) delete st.chips[k];
+    }
+    render('push');
+  }
+  $('chips').addEventListener('click', chipClick);
+  if (topbar) topbar.addEventListener('click', chipClick);
   $('toggles').addEventListener('click', function(e){
-    var b = e.target.closest('.tgl'); if (!b) return; st.tg[b.dataset.k] = !st.tg[b.dataset.k]; render();
+    var b = e.target.closest('.tgl'); if (!b) return; st.tg[b.dataset.k] = !st.tg[b.dataset.k]; render('push');
   });
-  $('reset').addEventListener('click', function(){ st.chips = {}; st.tg = {}; st.q = ''; $('q').value = ''; render(); });
+  $('reset').addEventListener('click', function(){ st.chips = {}; st.tg = {}; st.q = ''; $('q').value = ''; render('push'); });
+  window.addEventListener('popstate', function(){ fromURL(readURL() || {}); render(); });
   document.addEventListener('click', function(e){
     var b = e.target.closest('[data-copy]'); if (!b) return;
     var t = b.nextElementSibling.value || b.nextElementSibling.innerText;
@@ -596,7 +688,7 @@ JS = """
     if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(t).then(ok);
     else { var a = document.createElement('textarea'); a.value = t; document.body.appendChild(a); a.select(); document.execCommand('copy'); a.remove(); ok(); }
   });
-  render();
+  render('replace');
 })();
 """
 
