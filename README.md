@@ -805,18 +805,22 @@ motorbikes:
 
 Platform bar: every card shows its platform as a badge and carries it as `data-source` and as the
 built-in facet `src`: the adapters in the listing's `sources` (a listing found on several
-platforms has several), else its `source`, else the platform of its links (host without `www.` and
+platforms has several) plus the platforms of its other links (a link of another platform added to
+the listing, e.g. by a browser run), else its `source`, else the platform of its links (host without `www.` and
 top-level domain: `www.vinted.at` → `vinted`), else the prefix of its id when that is a known
 platform or an adapter of the search (`aurena-123`), else "other". Known platforms get their usual
 name (willhaben, eBay, Vinted, Aurena, …), any other one its key with a capital letter. The bar
 above the search field filters by platform ("All" plus one button per platform with its count);
 the choice is kept in the address, `?src=vinted,ebay`, together with the chips
-(`?src=ebay&cat=Consoles`, parameter = facet key), so a filtered view can be bookmarked or shared.
+(`?src=ebay&cat=Consoles`, parameter = facet key, values as shown on the page, case-sensitive;
+an encoded comma `%2C` works too), so a filtered view can be bookmarked or shared; the back button
+restores the previous choice, and without parameters the page restores its last choice
+(localStorage). Values not on the page are dropped from the address.
 `web.top` (default `[src]`) lists the facets whose buttons sit in that bar instead of among the
 chips, e.g. `top: [src, cat]`; a facet there is not repeated as a chip. `src` is built in like
 `tier`: a facet of that name is a configuration error, and it filters but cannot be a group.
 Without JavaScript the page shows every card in one list, sorted by score (the filter controls are
-hidden then). The pages use inline `<script>` and `<style>`; a Content-Security-Policy of the web
+hidden then); should the script fail, the same list stays visible. The pages use inline `<script>` and `<style>`; a Content-Security-Policy of the web
 server in front of them must allow those.
 
 Navigation: every search page and the deal list carry the same navigation, built from the

@@ -11,8 +11,8 @@ from deal_engine.core.config import ConfigError
 from deal_engine.web import render
 from test_render import item, make_cfg, page_html, write_state
 
-CLOTHES = {"facets": [{"key": "kat", "label": {"en": "Category", "de": "Kategorie"}, "field": "category"}],
-           "groups": ["tier", "kat"], "chips": ["kat"]}
+CLOTHES = {"facets": [{"key": "cat", "label": {"en": "Category", "de": "Kategorie"}, "field": "category"}],
+           "groups": ["tier", "cat"], "chips": ["cat"]}
 
 
 def de_ui(html):
@@ -62,7 +62,7 @@ def test_data_source_and_facet_per_card(page):
     assert c["Browser link"][0] == "vinted"     # no source: platform of the link's host
     assert c["Browser id"][0] == "aurena"       # no source, no link: known prefix of the id
     assert c["Unknown"][0] == "other"
-    assert c["Shirt"][1]["kat"] == "shirt" and c["Shirt"][1]["tier"] == "B"   # other facets unchanged
+    assert c["Shirt"][1]["cat"] == "shirt" and c["Shirt"][1]["tier"] == "B"   # other facets unchanged
     assert len(c) == len(LISTINGS)
 
 
@@ -82,16 +82,18 @@ def test_topbar_pool_visible_and_de_ui(page):
     assert page.index('id="topbar"') < page.index('class="controls"')
     assert '<div id="pool" class="list pool">' in page and 'id="pool" hidden' not in page
     assert "[hidden]{display:none!important}" in page   # .list must not beat pool.hidden
+    # with JavaScript the flat pool is hidden from the start (no flash before grouping)
+    assert ".js #pool{display:none}" in page and "documentElement.className += ' js'" in page
     assert "<noscript><style>.controls,.topbar{display:none}</style></noscript>" in page
     ui = de_ui(page)
     assert ui["top"] == ["src"]
-    assert ui["chips"] == [["kat", "Category"]] and all(c[0] != "src" for c in ui["chips"])
-    assert ui["url"] == ["src", "kat"]
+    assert ui["chips"] == [["cat", "Category"]] and all(c[0] != "src" for c in ui["chips"])
+    assert ui["url"] == ["src", "cat"]
     assert ui["labels"]["src"] == {"aurena": "Aurena", "ebay": "eBay", "json_file": "JSON file", "other": "Other",
                                    "vinted": "Vinted", "willhaben": "willhaben"}
     assert ui["t"]["all"] == "All" and ui["t"]["platform"] == "Platform"
-    assert ui["names"]["src"] == "Platform" and ui["names"]["kat"] == "Category"
-    assert ui["groups"] == [["tier", "Tier"], ["kat", "Category"]]
+    assert ui["names"]["src"] == "Platform" and ui["names"]["cat"] == "Category"
+    assert ui["groups"] == [["tier", "Tier"], ["cat", "Category"]]
 
 
 def test_german_texts(tmp_path):
@@ -104,20 +106,20 @@ def test_german_texts(tmp_path):
 
 
 def test_web_top_moves_facets_out_of_chips(tmp_path):
-    web = {**CLOTHES, "top": ["src", "kat"]}
+    web = {**CLOTHES, "top": ["src", "cat"]}
     cfg = make_cfg(tmp_path, {"clothes": {"web": web}})
     write_state(tmp_path, "clothes", LISTINGS[:2])
     p = render.cfg_for("clothes", config_mod.search(cfg, "clothes"), cfg)
-    assert p["top"] == ["src", "kat"] and p["chips"] == []
+    assert p["top"] == ["src", "cat"] and p["chips"] == []
     ui = de_ui(page_html(tmp_path, cfg, "clothes"))
-    assert ui["top"] == ["src", "kat"] and ui["chips"] == [] and ui["url"] == ["src", "kat"]
+    assert ui["top"] == ["src", "cat"] and ui["chips"] == [] and ui["url"] == ["src", "cat"]
 
 
 def test_web_top_empty_keeps_src_in_url(tmp_path):
     cfg = make_cfg(tmp_path, {"clothes": {"web": {**CLOTHES, "top": []}}})
     write_state(tmp_path, "clothes", LISTINGS[:1])
     ui = de_ui(page_html(tmp_path, cfg, "clothes"))
-    assert ui["top"] == [] and ui["chips"] == [["kat", "Category"]] and ui["url"] == ["src", "kat"]
+    assert ui["top"] == [] and ui["chips"] == [["cat", "Category"]] and ui["url"] == ["src", "cat"]
 
 
 @pytest.mark.parametrize("web, msg", [
@@ -162,5 +164,15 @@ def test_sources_of():
     assert so({"source": "ebay", "sources": {}, "urls": ["https://m.willhaben.at/1"]}) == ["willhaben"]
     assert so({"urls": ["https://www.vinted.de/items/1", "https://www.ebay.co.uk/itm/2"]}) == ["vinted", "ebay"]
     assert so({"id": "shop-1"}) == ["other"]
+    # a link of another platform added to an adapter's listing (e.g. by a browser run) counts too
+    wh = "https://www.willhaben.at/iad/1"
+    assert so({"sources": {"willhaben": "1"}, "_urls_by_source": {"willhaben": wh},
+               "urls": [wh, "https://www.aurena.at/posten/2"]}) == ["willhaben", "aurena"]
+    assert so({"sources": {"json_file": "1"}, "_urls_by_source": {"json_file": "https://example.invalid/1"},
+               "urls": ["https://example.invalid/1"]}) == ["json_file"]
+    # without _urls_by_source only known platforms are added from the links
+    assert so({"sources": {"json_file": "1"}, "urls": ["https://example.invalid/1",
+                                                       "https://www.vinted.at/items/3"]}) == ["json_file", "vinted"]
+    assert so({"sources": {"shop": "1"}, "urls": ["https://shop.example/1"]}, known={"shop"}) == ["shop"]
     assert so({"id": "shop-1"}, known={"shop"}) == ["shop"]
     assert so({}) == ["other"]

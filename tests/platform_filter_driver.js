@@ -1,7 +1,9 @@
 // Browser driver for tests/test_platform_filter.py (Node + Playwright, Chromium).
 //   node platform_filter_driver.js scenario <page.html>   -> JSON snapshots of the filter scenario
 //   node platform_filter_driver.js nojs <page.html>       -> JSON with the cards visible without JavaScript
-//   node platform_filter_driver.js plain <page.html>      -> JSON snapshots: load, click chip "hemd"
+//   node platform_filter_driver.js stale <page.html>      -> JSON: load with an outdated saved view
+//   node platform_filter_driver.js broken <page.html>     -> JSON: cards visible after a script error
+//   node platform_filter_driver.js plain <page.html>      -> JSON snapshots: load, click chip "shirt"
 // The page is served from http://de.test/s/ by request interception (no network, no server).
 // Exit code 3: Playwright or Chromium not available (the test skips).
 'use strict';
@@ -53,14 +55,28 @@ async function main() {
       await page.goto(BASE);
       res.visible = await page.evaluate(() => [...document.querySelectorAll('details.card')]
         .filter(e => e.getClientRects().length > 0).map(e => e.querySelector('.t').textContent).sort());
+    } else if (mode === 'stale' || mode === 'broken') {
+      const page = await (await browser.newContext()).newPage();
+      page.on('pageerror', e => res.errors.push(String(e)));
+      await page.route('http://de.test/**', r => r.fulfill({ contentType: 'text/html; charset=utf-8', body: html }));
+      await page.goto(BASE);
+      if (mode === 'stale') {
+        await page.evaluate(() => localStorage.setItem('de-view-' + location.pathname,
+          JSON.stringify({ group: 'gone', chips: { cat: 'shirt' }, tg: { gone: true }, sort: 'gone' })));
+        await page.goto(BASE);
+        res.initial = await snap(page);
+      } else {
+        res.visible = await page.evaluate(() => [...document.querySelectorAll('details.card')]
+          .filter(e => e.getClientRects().length > 0).map(e => e.querySelector('.t').textContent).sort());
+      }
     } else if (mode === 'plain') {
       const page = await (await browser.newContext()).newPage();
       page.on('pageerror', e => res.errors.push(String(e)));
       await page.route('http://de.test/**', r => r.fulfill({ contentType: 'text/html; charset=utf-8', body: html }));
       await page.goto(BASE);
       res.initial = await snap(page);
-      await page.click('#chips .fchip[data-v="hemd"]');
-      res.kat = await snap(page);
+      await page.click('#chips .fchip[data-v="shirt"]');
+      res.cat = await snap(page);
     } else {
       const ctx = await browser.newContext();
       const page = await ctx.newPage();
@@ -85,8 +101,8 @@ async function main() {
       res.url_ebay = await snap(page);
       await page.goto(BASE);
       res.stored = await snap(page);
-      await page.click('#chips .fchip[data-v="hemd"]');
-      res.kat = await snap(page);
+      await page.click('#chips .fchip[data-v="shirt"]');
+      res.cat = await snap(page);
       await page.fill('#q', 'combo');
       res.search = await snap(page);
       await page.click('#reset');
@@ -94,6 +110,8 @@ async function main() {
       await page.goto(BASE + '?src=' + encodeURIComponent('<script>alert(1)</script>') + ','
                       + encodeURIComponent('<img src=x onerror=alert(2)>') + ',vinted');
       res.evil = await snap(page);
+      await page.goto(BASE + '?src=ebay%2Cvinted');
+      res.encoded = await snap(page);
     }
   } finally {
     await browser.close();

@@ -447,12 +447,19 @@ def src_key(v):
 
 def sources_of(l, known=()):
     """Platform keys of a listing, in order: the adapters in "sources" (all of them for a listing
-    found on several platforms), else its "source", else the platforms of its links (host without
-    www. and top-level domain, e.g. vinted.at -> "vinted"), else the prefix of its id ("vinted-123")
-    when that is a platform of PLATFORM_LABELS or of `known`, else ["other"]."""
+    found on several platforms) plus the platforms of its other links (a link of another platform
+    added to the listing, e.g. by a browser run), else its "source", else the platforms of its links
+    (host without www. and top-level domain, e.g. vinted.at -> "vinted"), else the prefix of its id
+    ("vinted-123") when that is a platform of PLATFORM_LABELS or of `known`, else ["other"]."""
     srcs, first = l.get("sources"), l.get("source")
     if isinstance(srcs, dict) and srcs:
         raw = list(srcs)
+        by, urls = l.get("_urls_by_source"), l.get("urls")
+        more = [u for u in (urls if isinstance(urls, list) else [])
+                if not isinstance(by, dict) or u not in by.values()]
+        # without _urls_by_source the adapters' own links are unknown: then only known platforms
+        raw += [p for p in map(platform_of, more)
+                if isinstance(by, dict) or p in PLATFORM_LABELS or p in known]
     elif isinstance(first, str) and not isinstance(srcs, dict):
         raw = [first]
     else:   # no source (added by hand / by another tool), or all adapters gone and only links left
@@ -479,7 +486,7 @@ CSS = """
  --ok:#2f6b4f;--ok-bg:#e2efe6;--bad:#9b3b26;--bad-bg:#f5e3dc;--unk:#7a6522;--unk-bg:#f3ecd6;--new:#1f5f8b}
 @media (prefers-color-scheme:dark){:root{--bg:#141614;--card:#1c1f1c;--fg:#e9ebe6;--muted:#999d94;--line:#2e322d;
  --acc:#8cc6a4;--acc-soft:#22302a;--ok:#8cc6a4;--ok-bg:#1f3128;--bad:#e79a82;--bad-bg:#3a2520;--unk:#d9c27a;--unk-bg:#343020;--new:#7fb8e0}}
-*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}[hidden]{display:none!important}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}[hidden]{display:none!important}.js #pool{display:none}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
 main{max-width:920px;margin:0 auto;padding:16px 16px 48px}
 a{color:var(--acc)}
@@ -556,6 +563,7 @@ footer{margin-top:40px;color:var(--muted);font-size:.78rem}
 
 JS = """
 (function(){
+function main(){
   // Facets (data-fac on the cards): a value is a string or a list of strings (a listing on two
   // platforms has src: ["ebay", "vinted"]). Within a facet the selected values are ORed (a card
   // matches if one of its values is selected), across facets, toggles and search they are ANDed.
@@ -603,7 +611,9 @@ JS = """
 
   $('groupby').innerHTML = GROUPS.map(function(g){ return '<option value="'+esc(g[0])+'">'+esc(g[1])+'</option>'; }).join('');
   $('groupby').value = st.group;
-  if (st.sort) $('sort').value = st.sort;
+  if (st.sort && [].some.call($('sort').options, function(o){ return o.value === st.sort; })) $('sort').value = st.sort;
+  var tgKeys = TOGGLES.map(function(t){ return t[0]; });   // drop saved toggles that no longer exist
+  Object.keys(st.tg).forEach(function(k){ if (tgKeys.indexOf(k) < 0) delete st.tg[k]; });
 
   var known = Object.create(null);   // facet key -> values that have a button
   function row(k, name, top){
@@ -648,7 +658,12 @@ JS = """
       var k = pkey(p), i = p.indexOf('=');
       if (URLK.indexOf(k) < 0) return;
       found = true;
-      sel[k] = (sel[k] || []).concat(i < 0 ? [] : p.slice(i + 1).split(',').map(dec));
+      var vs = [];   // split at ',' and, for a value the page does not know, also at an encoded comma
+      (i < 0 ? [] : p.slice(i + 1).split(',')).forEach(function(r){
+        var d = dec(r), kn = known[k] || [];
+        vs = vs.concat(kn.indexOf(d) < 0 && d.indexOf(',') >= 0 ? d.split(',') : [d]);
+      });
+      sel[k] = (sel[k] || []).concat(vs);
     });
     return found ? clean(sel) : null;
   }
@@ -679,7 +694,8 @@ JS = """
   }
 
   function sortCards(list){
-    var o = $('sort').options[$('sort').selectedIndex], key = o.value, desc = o.dataset.desc === '1';
+    var o = $('sort').options[$('sort').selectedIndex] || $('sort').options[0]; if (!o) return list;
+    var key = o.value, desc = o.dataset.desc === '1';
     return list.sort(function(a,b){
       var x = parseFloat(a.el.dataset[key]), y = parseFloat(b.el.dataset[key]);
       if (isNaN(x)) x = desc ? -Infinity : Infinity; if (isNaN(y)) y = desc ? -Infinity : Infinity;
@@ -745,6 +761,12 @@ JS = """
     else { var a = document.createElement('textarea'); a.value = t; document.body.appendChild(a); a.select(); document.execCommand('copy'); a.remove(); ok(); }
   });
   render('replace');
+}
+try { main(); } catch (err) {   // keep the cards visible (as without JavaScript) when the script fails
+  document.documentElement.classList.remove('js');
+  var p = document.getElementById('pool'); if (p) p.hidden = false;
+  throw err;
+}
 })();
 """
 
@@ -988,7 +1010,7 @@ def render(cfg, name, log=print):
 
     html_page = f"""<!doctype html><html lang="{esc(loc.code)}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
-<title>{esc(page['title'])}</title><style>{CSS}</style>
+<title>{esc(page['title'])}</title><script>document.documentElement.className += ' js';</script><style>{CSS}</style>
 <noscript><style>.controls,.topbar{{display:none}}</style></noscript></head><body><main>
 <nav>{nav}</nav>
 <header><h1>{esc(page['title'])}</h1>
@@ -1011,7 +1033,7 @@ def render(cfg, name, log=print):
 <div id="groups"></div>
 <p id="empty" class="empty" hidden>{t("empty")}</p>
 <div id="pool" class="list pool">{pool}</div>
-<script>var DE_UI = {json.dumps(js_ui, ensure_ascii=False).replace("</", "<\\/")};</script>
+<script>var DE_UI = {json.dumps(js_ui, ensure_ascii=False).replace("<", "\\u003c")};</script>
 <footer>{t("footer")}</footer>
 </main><script>{JS}</script></body></html>"""
 

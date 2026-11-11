@@ -7,8 +7,8 @@
 - **Platform on the search pages**: every card carries `data-source` (its platform keys,
   space-separated: `data-source="willhaben ebay"`), the built-in facet **`src`** in `data-fac`
   (a key, or a list for a listing on several platforms) and a platform badge in its summary line
-  (`<span class="pill src src-<key>">`). The platform is the adapters in `sources`, else
-  `source`, else the platform of the links (`www.vinted.at` → `vinted`), else a known id prefix
+  (`<span class="pill src src-<key>">`). The platform is the adapters in `sources` plus the
+  platforms of the listing's other links, else `source`, else the platform of the links (`www.vinted.at` → `vinted`), else a known id prefix
   (`aurena-123`), else `other` (**`render.sources_of`**, names in **`render.PLATFORM_LABELS`**).
 - **Bar above the list** (`<div id="topbar">`) for the facets in **`web.top`** (per search,
   default `[src]`); `DE_UI` gets `top`, `labels` (display name per `src` value), `url` (facets kept
@@ -22,7 +22,12 @@
 
 - **Without JavaScript every card is visible**: the card pool is no longer rendered `hidden`
   (one list sorted by score; the script hides it and fills the groups), the filter controls are
-  hidden by a `<noscript>` style. `[hidden]` always wins over a display rule now.
+  hidden by a `<noscript>` style. With JavaScript the pool is hidden from the start (class `js`
+  on `<html>`, no flash of the flat list); if the script fails, the list is shown again.
+  `[hidden]` always wins over a display rule now.
+- Page script: a saved sort or toggle that is no longer configured is dropped (it used to empty
+  the list); `DE_UI` escapes every `<` (`\u003c`), not only `</`; `?src=ebay%2Cvinted` (encoded
+  comma) is read like `?src=ebay,vinted`.
 
 ## 0.2.15 – 2026-11-10
 
