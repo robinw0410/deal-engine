@@ -596,6 +596,7 @@ JS = """
   function facetName(k){
     var all = CHIPS.concat(GROUPS);
     if (k === 'src' && T.platform) return T.platform;
+    if (UI.names && HAS.call(UI.names, k)) return String(UI.names[k]);
     for (var i = 0; i < all.length; i++) if (all[i][0] === k) return all[i][1];
     return k === 'src' ? 'Platform' : k;
   }
