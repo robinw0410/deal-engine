@@ -75,3 +75,17 @@ def road_km(lat, lon, home, factor=1.3):
 def eur(v, digits=0):
     n = num(v)
     return f"{n:,.{digits}f} €" if n is not None else "?"
+
+
+def platform_of(url):
+    """Platform of a link: the host's name without www./m. and top-level domain, so ebay.at, ebay.de
+    and m.ebay.co.uk are all "ebay". None for something that is no http(s) link."""
+    m = re.match(r"https?://([^/:?#]+)", str(url or ""), re.I)
+    if not m:
+        return None
+    parts = [p for p in m.group(1).lower().split(".") if p]
+    while len(parts) > 2 and parts[0] in ("www", "m"):
+        parts = parts[1:]
+    if len(parts) >= 3 and parts[-2] in ("co", "com", "org", "net", "ac", "gv"):
+        parts = parts[:-1]   # ebay.co.uk, example.com.au
+    return parts[-2] if len(parts) >= 2 else (parts[0] if parts else None)

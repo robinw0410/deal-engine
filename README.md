@@ -53,7 +53,7 @@ there `deal_engine` is importable without installing it.
 **As a package**, from a release tag:
 
 ```sh
-pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.15"
+pip install "deal-engine @ git+https://github.com/robinw0410/deal-engine@v0.2.16"
 ```
 
 This installs the `deal_engine` package including the built-in prompts and the deal list page.
@@ -776,9 +776,10 @@ eur|int|text}`), `meta`, `badges` (built in: `deal_type`, `risk`, `photo_check`,
 `shipping_unknown`, `auction_end`, `parts_in_stock`, or `{field, label: "text {value}", class:
 ok|bad|unk|new, when}`), `sorts` (`{label, field, desc}`, the first is the default), `facets`
 (`{key, field}` or regex categories `{key, from, rules: [[label, regex], …], other}`), `groups`,
-`chips`, `orders`, `toggles` (`{key, label, field}` with `equals`, `min` or `max`) and
-`deal_link`. `copy_prompt: true` adds a "copy as prompt" button to every card (a plain-text summary
-of the listing for a chat with an assistant); it is off by default (since 0.2.1) and can be
+`chips`, `top` (facets in the bar above the list, default `[src]`, see below), `orders`, `toggles`
+(`{key, label, field}` with `equals`, `min` or `max`) and `deal_link`. `copy_prompt: true` adds a
+"copy as prompt" button to every card (a plain-text summary of the listing for a chat with an
+assistant); it is off by default (since 0.2.1) and can be
 switched on for all searches with the top-level `web.copy_prompt: true` (a search's own value
 wins). Labels are plain text or one text per locale (`{en: Profit, de: Gewinn}`); a missing
 label is the locale's field label. A setting with a clearly wrong type stops with a configuration
@@ -801,6 +802,22 @@ motorbikes:
     toggles:
       - {key: a2, label: A2 license, field: ps, max: 48}
 ```
+
+Platform bar: every card shows its platform as a badge and carries it as `data-source` and as the
+built-in facet `src`: the adapters in the listing's `sources` (a listing found on several
+platforms has several), else its `source`, else the platform of its links (host without `www.` and
+top-level domain: `www.vinted.at` → `vinted`), else the prefix of its id when that is a known
+platform or an adapter of the search (`aurena-123`), else "other". Known platforms get their usual
+name (willhaben, eBay, Vinted, Aurena, …), any other one its key with a capital letter. The bar
+above the search field filters by platform ("All" plus one button per platform with its count);
+the choice is kept in the address, `?src=vinted,ebay`, together with the chips
+(`?src=ebay&cat=Consoles`, parameter = facet key), so a filtered view can be bookmarked or shared.
+`web.top` (default `[src]`) lists the facets whose buttons sit in that bar instead of among the
+chips, e.g. `top: [src, cat]`; a facet there is not repeated as a chip. `src` is built in like
+`tier`: a facet of that name is a configuration error, and it filters but cannot be a group.
+Without JavaScript the page shows every card in one list, sorted by score (the filter controls are
+hidden then). The pages use inline `<script>` and `<style>`; a Content-Security-Policy of the web
+server in front of them must allow those.
 
 Navigation: every search page and the deal list carry the same navigation, built from the
 config: one link per search (`../<slug>/`, its `title`, in config order), then the deal list

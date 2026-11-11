@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.2.16 – 2026-11-11
+
+### Added
+
+- **Platform on the search pages**: every card carries `data-source` (its platform keys,
+  space-separated: `data-source="willhaben ebay"`), the built-in facet **`src`** in `data-fac`
+  (a key, or a list for a listing on several platforms) and a platform badge in its summary line
+  (`<span class="pill src src-<key>">`). The platform is the adapters in `sources`, else
+  `source`, else the platform of the links (`www.vinted.at` → `vinted`), else a known id prefix
+  (`aurena-123`), else `other` (**`render.sources_of`**, names in **`render.PLATFORM_LABELS`**).
+- **Bar above the list** (`<div id="topbar">`) for the facets in **`web.top`** (per search,
+  default `[src]`); `DE_UI` gets `top`, `labels` (display name per `src` value), `url` (facets kept
+  in the address, `?src=vinted,ebay&cat=…`), `names` (display name per facet) and the texts
+  `t.all`, `t.platform`. A facet in `top` is not repeated in `chips`. `src` is built in like
+  `tier`: a facet named `src`, an unknown facet in `top` or `src` as a group is a configuration
+  error.
+- **`util.platform_of(url)`** (was `pipeline._platform`, which stays as an alias).
+
+### Changed
+
+- **Without JavaScript every card is visible**: the card pool is no longer rendered `hidden`
+  (one list sorted by score; the script hides it and fills the groups), the filter controls are
+  hidden by a `<noscript>` style. `[hidden]` always wins over a display rule now.
+
 ## 0.2.15 – 2026-11-10
 
 ### Added

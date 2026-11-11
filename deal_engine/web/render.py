@@ -4,7 +4,7 @@
 Output: <web.root>/<slug>/index.html  (web.root default: {data_dir}/web)
 
 Page settings come from searches.<name>.web in the config (columns, badges, sorts, facets,
-toggles, ...; see config.example.yaml). A search without them gets a generic page. Texts of the
+toggles, top, ...; see config.example.yaml). A search without them gets a generic page. Texts of the
 page come from UI below (per locale, falls back to English), field labels and machine values
 from deal_engine.core.locale.
 """
@@ -18,7 +18,7 @@ from deal_engine.core import clock
 from deal_engine.core import config as config_mod
 from deal_engine.core import locale as locale_mod
 from deal_engine.core.config import ConfigError
-from deal_engine.core.util import num
+from deal_engine.core.util import num, platform_of
 
 UI = {
     "en": {
@@ -32,7 +32,7 @@ UI = {
         "footer": "Scores are automatic estimates from listing text, photos and asking prices. "
                   "Check for yourself before buying.",
         "tier": "Tier", "no_tier": "No tier", "other": "Other", "only_new": "only new",
-        "js.listings": "listings", "js.of": "of", "js.copied": "copied ✓",
+        "js.listings": "listings", "js.of": "of", "js.copied": "copied ✓", "js.all": "All", "platform": "Platform",
         "pill.new": "new", "pill.relisted": "relisted", "pill.online": "online {n} days", "pill.in_stock": "in stock",
         "b.risk": "risk {v}", "b.photos_damage": "photos: more damage", "b.photos_insufficient": "photos insufficient",
         "b.ship_unknown": "shipping unknown", "b.auction": "auction until {v}", "b.parts_stock": "parts in stock",
@@ -64,7 +64,8 @@ UI = {
         "footer": "Scores sind automatische Schätzungen aus Inseratstext, Fotos und Angebotspreisen. "
                   "Vor dem Kauf selbst prüfen.",
         "tier": "Stufe", "no_tier": "Keine Stufe", "other": "Sonstiges", "only_new": "nur neue",
-        "js.listings": "Inserate", "js.of": "von", "js.copied": "kopiert ✓",
+        "js.listings": "Inserate", "js.of": "von", "js.copied": "kopiert ✓", "js.all": "Alle",
+        "platform": "Plattform",
         "pill.new": "neu", "pill.relisted": "neu eingestellt", "pill.online": "seit {n} Tagen online",
         "pill.in_stock": "auf Lager",
         "b.risk": "Risiko {v}", "b.photos_damage": "Fotos: mehr Schaden", "b.photos_insufficient": "Fotos unzureichend",
@@ -293,8 +294,8 @@ def cfg_for(name, sc=None, cfg=None):
     page["facets"], orders = {}, {}
     for i, f in enumerate(entries("facets", [], need=())):
         key = check(f.get("key") or f.get("field"), str, f".facets[{i}].key")
-        if key == "tier":
-            bad(f".facets[{i}]: 'tier' is built in, use another key")
+        if key in ("tier", SRC):
+            bad(f".facets[{i}]: {key!r} is built in, use another key")
         if f.get("rules") is not None:
             fields = check(f.get("from") or ["title"], list, f".facets[{i}].from")
             compiled = []
@@ -315,13 +316,20 @@ def cfg_for(name, sc=None, cfg=None):
         page["facets"][key] = (txt(f.get("label"), loc) or loc.label(f.get("field") or key), fn)
 
     known = {"tier", *page["facets"]}
-    for key, default in (("groups", ["tier"]), ("chips", [])):
+    for key, default in (("groups", ["tier"]), ("chips", []), ("top", [SRC])):
         page[key] = get(key, list, default)
+        # src (platform) filters but does not group: a listing can be on several platforms
+        ok = known if key == "groups" else known | {SRC}
         for k in page[key]:
-            if k not in known:
-                bad(f".{key}: unknown facet {k!r} (known: {', '.join(sorted(known))})")
+            if not isinstance(k, str) or k not in ok:
+                bad(f".{key}: unknown facet {k!r} (known: {', '.join(sorted(ok))})"
+                    + (" ('src' can filter, not group)" if k == SRC else ""))
     if "tier" not in page["groups"]:   # tier is always available
         page["groups"] = page["groups"] + ["tier"]
+    page["top"] = list(dict.fromkeys(page["top"]))   # bar above the list; a facet there is no chip
+    page["chips"] = [k for k in dict.fromkeys(page["chips"]) if k not in page["top"]]
+    ads = sc.get("adapters")
+    page["adapters"] = {src_key(a) for a in ads if isinstance(a, str)} if isinstance(ads, list) else set()
     for k, vals in get("orders", dict, {}).items():
         orders[str(k)] = [txt(v, loc) for v in check(vals, list, f".orders.{k}")]
     page["orders"] = orders
@@ -424,12 +432,54 @@ def is_new(l):
     return l.get("first_seen") == clock.today_str()
 
 
+SRC = "src"   # built-in facet: the platform(s) of a listing (adapter names, or the host of its link)
+# display names of platforms; any other key is shown with a capital first letter
+PLATFORM_LABELS = {"willhaben": "willhaben", "ebay": "eBay", "vinted": "Vinted", "aurena": "Aurena",
+                   "kleinanzeigen": "Kleinanzeigen", "shpock": "Shpock", "facebook": "Facebook",
+                   "json_file": {"en": "JSON file", "de": "JSON-Datei"}}
+OTHER_SRC = "other"
+
+
+def src_key(v):
+    """A platform key as used in data-source, data-fac and ?src=: lowercase letters, digits, _ and -."""
+    return re.sub(r"[^a-z0-9_-]", "", str(v or "").strip().lower())
+
+
+def sources_of(l, known=()):
+    """Platform keys of a listing, in order: the adapters in "sources" (all of them for a listing
+    found on several platforms), else its "source", else the platforms of its links (host without
+    www. and top-level domain, e.g. vinted.at -> "vinted"), else the prefix of its id ("vinted-123")
+    when that is a platform of PLATFORM_LABELS or of `known`, else ["other"]."""
+    srcs, first = l.get("sources"), l.get("source")
+    if isinstance(srcs, dict) and srcs:
+        raw = list(srcs)
+    elif isinstance(first, str) and not isinstance(srcs, dict):
+        raw = [first]
+    else:   # no source (added by hand / by another tool), or all adapters gone and only links left
+        urls = l.get("urls") or l.get("url") or []
+        raw = [platform_of(u) for u in (urls if isinstance(urls, list) else [urls])]
+    keys = list(dict.fromkeys(k for k in map(src_key, raw) if k))
+    if not keys and isinstance(first, str):
+        keys = [k for k in [src_key(first)] if k]
+    if not keys:
+        m = re.match(r"([a-z][a-z0-9_]*)-", str(l.get("id") or ""))
+        if m and (m.group(1) in PLATFORM_LABELS or m.group(1) in known):
+            keys = [m.group(1)]
+    return keys or [OTHER_SRC]
+
+
+def platform_label(key, loc):
+    if key == OTHER_SRC:
+        return ui(loc, "other")
+    return txt(PLATFORM_LABELS.get(key), loc) or key[:1].upper() + key[1:]
+
+
 CSS = """
 :root{--bg:#f4f2ec;--card:#fffdf8;--fg:#1f2420;--muted:#6c6f68;--line:#e2ded3;--acc:#2f5d46;--acc-soft:#e3ece5;
  --ok:#2f6b4f;--ok-bg:#e2efe6;--bad:#9b3b26;--bad-bg:#f5e3dc;--unk:#7a6522;--unk-bg:#f3ecd6;--new:#1f5f8b}
 @media (prefers-color-scheme:dark){:root{--bg:#141614;--card:#1c1f1c;--fg:#e9ebe6;--muted:#999d94;--line:#2e322d;
  --acc:#8cc6a4;--acc-soft:#22302a;--ok:#8cc6a4;--ok-bg:#1f3128;--bad:#e79a82;--bad-bg:#3a2520;--unk:#d9c27a;--unk-bg:#343020;--new:#7fb8e0}}
-*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}[hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
 main{max-width:920px;margin:0 auto;padding:16px 16px 48px}
 a{color:var(--acc)}
@@ -496,6 +546,11 @@ footer{margin-top:40px;color:var(--muted);font-size:.78rem}
 .fchip.on,.tgl.on{background:var(--acc);border-color:var(--acc);color:var(--card)}
 .fchip.on small{color:var(--card)}
 .toggles{display:flex;flex-wrap:wrap;gap:5px}
+.topbar{display:flex;flex-direction:column;gap:6px;margin:8px 0 6px}.topbar:empty{display:none}
+.fchip.all{font-weight:600}
+.pill.src{background:var(--bg);color:var(--muted);box-shadow:inset 0 0 0 1px var(--line)}
+.pill.src-willhaben{color:var(--new)}.pill.src-ebay{color:var(--unk)}.pill.src-vinted{color:var(--ok)}
+.pill.src-aurena{color:var(--bad)}
 .empty{color:var(--muted);text-align:center;padding:20px 0}
 """
 
@@ -710,6 +765,8 @@ def card(l, page, cfg):
         badges += " " + pill("unk", ui(loc, "pill.relisted"))
     if l.get("days_online") is not None and l["days_online"] >= 21:
         badges += " " + pill("unk", ui(loc, "pill.online", n=l["days_online"]))
+    srcs = sources_of(l, page.get("adapters", ()))
+    badges = " ".join(pill(f"src src-{k}", platform_label(k, loc)) for k in srcs) + " " + badges
 
     def note(key, v, cls="note"):
         return f'<div class="{cls}">{esc(ui(loc, key))}: {esc(v)}</div>'
@@ -756,11 +813,13 @@ def card(l, page, cfg):
     fac = {"tier": page["tiers"].get(l.get("tier"), ui(loc, "no_tier"))}
     for k, (_, fn) in page["facets"].items():
         fac[k] = fn(l, loc)
+    fac[SRC] = srcs[0] if len(srcs) == 1 else srcs
     tg = {"new": 1 if is_new(l) else 0}
     for k, _, fn in page["toggles"]:
         tg[k] = 1 if fn(l) else 0
     qtext = " ".join(str(l.get(k) or "") for k in ("title", "device", "defect", "location", "summary")).lower()
-    attrs = (f"{data_attrs(l, page)} data-fac='{esc(json.dumps(fac, ensure_ascii=False))}' "
+    attrs = (f"data-source=\"{esc(' '.join(srcs))}\" {data_attrs(l, page)} "
+             f"data-fac='{esc(json.dumps(fac, ensure_ascii=False))}' "
              f"data-tg='{esc(json.dumps(tg))}' data-q=\"{esc(qtext[:600])}\"")
     listed = ui(loc, "listed.since", first=l.get("first_seen"), last=l.get("last_seen"))
     return f"""<details class="{cls}" {attrs}>
@@ -815,13 +874,20 @@ def render(cfg, name, log=print):
                 if trs else f"<p>{t('top.none')}</p>")
 
     pool = "".join(card(l, page, cfg) for l in by_score)
-    fac_labels = {"tier": ui(loc, "tier"), **{k: v[0] for k, v in page["facets"].items()}}
+    fac_labels = {"tier": ui(loc, "tier"), SRC: ui(loc, "platform"),
+                  **{k: v[0] for k, v in page["facets"].items()}}
+    src_keys = dict.fromkeys(k for l in by_score for k in sources_of(l, page["adapters"]))
     js_ui = {
         "groups": [[k, fac_labels[k]] for k in page["groups"]],
         "chips": [[k, fac_labels[k]] for k in page["chips"]],
+        "top": page["top"],   # facet keys whose bar is in #topbar instead of #chips
+        "labels": {SRC: {k: platform_label(k, loc) for k in sorted(src_keys)}},   # display name per value
+        "url": list(dict.fromkeys([SRC, *page["top"], *page["chips"]])),   # facets kept in ?key=a,b
+        "names": fac_labels,   # display name per facet key
         "toggles": [["new", ui(loc, "only_new")]] + [[k, lbl] for k, lbl, _ in page["toggles"]],
         "orders": {"tier": list(page["tiers"].values()) + [ui(loc, "no_tier")], **page["orders"]},
-        "t": {**{k: ui(loc, f"js.{k}") for k in ("listings", "of", "copied")}, "other": ui(loc, "other")},
+        "t": {**{k: ui(loc, f"js.{k}") for k in ("listings", "of", "copied", "all")}, "other": ui(loc, "other"),
+              "platform": ui(loc, "platform")},
     }
     sort_opts = "".join(f'<option value="{sort_key(f)}" data-desc="{1 if d else 0}">{esc(lbl)}</option>'
                         for lbl, f, d in page["sorts"])
@@ -829,7 +895,8 @@ def render(cfg, name, log=print):
 
     html_page = f"""<!doctype html><html lang="{esc(loc.code)}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
-<title>{esc(page['title'])}</title><style>{CSS}</style></head><body><main>
+<title>{esc(page['title'])}</title><style>{CSS}</style>
+<noscript><style>.controls,.topbar{{display:none}}</style></noscript></head><body><main>
 <nav>{nav}</nav>
 <header><h1>{esc(page['title'])}</h1>
 <div class="status"><span><b>{len(listings)}</b> {t("st.active")}</span>{status_bits}
@@ -837,6 +904,7 @@ def render(cfg, name, log=print):
 <h2>{t("top")} <small>{t("top.by")}</small></h2>
 {top_html}
 <div class="toolbar"><h2>{t("all")} <small id="count"></small></h2></div>
+<div id="topbar" class="topbar"></div>
 <div class="controls">
   <input type="search" id="q" placeholder="{t("search")}" aria-label="{t("search.aria")}">
   <div class="row">
@@ -849,7 +917,7 @@ def render(cfg, name, log=print):
 </div>
 <div id="groups"></div>
 <p id="empty" class="empty" hidden>{t("empty")}</p>
-<div id="pool" hidden>{pool}</div>
+<div id="pool" class="list pool">{pool}</div>
 <script>var DE_UI = {json.dumps(js_ui, ensure_ascii=False).replace("</", "<\\/")};</script>
 <footer>{t("footer")}</footer>
 </main><script>{JS}</script></body></html>"""

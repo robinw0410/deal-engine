@@ -151,6 +151,8 @@ searches:
         - {key: kind, label: {en: Kind, de: Art}, field: deal_type, default: repair, capitalize: true}
       groups: [cat, tier, kind]        # "group by" choices, first one is the default
       chips: [cat, kind]               # filter chips
+      # top: [src, cat]                # facets in the bar above the list (default [src] = platform;
+      #                                # src is built in); a facet there is no chip; kept in ?src=…&cat=…
       # orders: {kind: [Repair, Flip]} # fixed value order of a facet (regex facets use their rule order)
       toggles:                         # filter buttons: equals, max or min
         - {key: ship, label: {en: shipping possible, de: Versand möglich}, field: shipping_possible, equals: true}
