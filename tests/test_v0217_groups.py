@@ -181,3 +181,32 @@ def test_sold_by_group_clean_leaves_out_the_excluded_classification(tmp_path, mo
     new = history.sold_by_group(con, "s", 60, clean=history.sold_settings(sc))
     assert {g: s["p"] for g, s in new.items()} == {"Xbox Controller": [35], "Switch Pro Controller": [40]}
     con.close()
+
+
+# ---------------------------------------------------------------------------- soft_exclude
+from deal_engine.core.groups import check_groups as _check, from_classification as _fc, match_group as _mg  # noqa: E402
+
+SOFT = [
+    {"name": "Xbox One", "match": r"xbox\s*one", "soft_exclude": r"spiele|fifa", "exclude": r"controller",
+     "veto": r"headset"},
+    {"name": "Xbox Controller", "match": r"controller", "exclude": r"\b360\b"},
+]
+
+
+def test_soft_exclude_falls_through_like_exclude_for_word_rules():
+    assert _mg("Xbox One S 2 Spiele", SOFT) is None
+    assert _mg("Xbox One Controller", SOFT)["name"] == "Xbox Controller"
+    assert _mg("Xbox One S 1TB", SOFT)["name"] == "Xbox One"
+
+
+def test_classification_may_overrule_soft_exclude_but_not_exclude_or_veto():
+    r = _fc("Xbox One S 2 Spiele", ("Xbox One", 1, "device"), SOFT)
+    assert r is not None and r[1]["name"] == "Xbox One"
+    assert _fc("Xbox 360 Controller", ("Xbox Controller", 1, "device"), SOFT) is None
+    assert _fc("Xbox One Headset", ("Xbox One", 1, "device"), SOFT) is None
+
+
+def test_soft_exclude_regex_is_checked():
+    import pytest
+    with pytest.raises(ValueError, match="soft_exclude"):
+        _check([{"name": "X", "match": "x", "soft_exclude": "("}])

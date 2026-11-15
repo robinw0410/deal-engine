@@ -8,7 +8,10 @@ working unit (used to keep broken or mispriced listings out of the market statis
 Groups are checked in order; the first group whose "match" hits and whose "exclude" does not
 wins. An excluded title falls through to the later groups. The optional "veto" (regex) stops
 that: if "match" and "veto" both hit, the title gets no group at all ("PS5 headset" must not
-fall through to a broader group).
+fall through to a broader group). The optional "soft_exclude" (regex, since 0.2.17) works like
+"exclude" for the word rules, but a plausible LLM classification may overrule it (from_classification):
+"exclude" means "never this group", "soft_exclude" means "not by the title alone" ("Xbox One S 2
+Spiele" may still be a console when the model says so).
 
 Quantity words, "with/inkl." clauses, the default accessory words and the spare-part rule come from the locale
 (core/locale.py); every function takes an optional locale (default English).
@@ -27,15 +30,19 @@ def _loc(loc):
 
 
 def match_group(title, groups):
-    """First group whose match hits and whose exclude does not; None if a matching group's veto hits."""
+    """First group whose match hits and whose exclude and soft_exclude do not; None if a matching group's
+    veto hits."""
     t = title or ""
     for g in groups or []:
         if not re.search(g["match"], t, re.I):
             continue
         if g.get("veto") and re.search(g["veto"], t, re.I):
             return None   # no fall-through to later (broader) groups
-        if not (g.get("exclude") and re.search(g["exclude"], t, re.I)):
-            return g
+        if g.get("exclude") and re.search(g["exclude"], t, re.I):
+            continue
+        if g.get("soft_exclude") and re.search(g["soft_exclude"], t, re.I):
+            continue
+        return g
     return None
 
 
@@ -367,6 +374,8 @@ def from_classification(title, cls, groups):
     median. If no later group matches, or an earlier group takes the title by the word rules, the exclude
     stands ("Xbox 360 Controller": no later group matches; "Switch nur Tablet ohne Joy-Con": the earlier
     group "Switch nur Tablet"; "Nintendo Switch 2 Pro Controller": "Switch 2 Pro Controller").
+    soft_exclude never makes a classification implausible: it is the word rules' "not by the title
+    alone", which the model may overrule ("Xbox One S 2 Spiele", "Star Wars Limited Edition PS4").
     Otherwise (kind, group dict or None, qty) with kind device/bundle/accessory/part/other
     (device/bundle without a known group count as other)."""
     if not cls:
@@ -409,7 +418,7 @@ def check_groups(groups, where="market.groups"):
     for i, g in enumerate(groups or []):
         if not isinstance(g, dict) or not g.get("name") or not g.get("match"):
             raise ValueError(f"{where}[{i}]: every group needs 'name' and 'match'")
-        for k in ("match", "exclude", "veto"):
+        for k in ("match", "exclude", "soft_exclude", "veto"):
             if g.get(k) is None:
                 continue
             try:

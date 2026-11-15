@@ -20,7 +20,10 @@
   the title on to a later group that matches it, the model may still overrule that fall-through
   ("DualSense für PS5 Konsole", "Switch / OLED Joy-Con links"). Fixes Xbox 360 controllers counted as
   Xbox Controller, Switch 2 Pro controllers as Switch Pro Controller and Switch tablets as Nintendo
-  Switch, in the median as well as in the sale price from disappeared listings.
+  Switch, in the median as well as in the sale price from disappeared listings. New optional group
+  key `soft_exclude` (regex, checked at load): like `exclude` for the word rules, but the model may
+  overrule it, for rules that mean "not by the title alone" (game names, editions); a config that
+  relied on the model overruling `exclude` moves those parts there.
 - **Cleaned sale price from disappeared listings** (`history.sold_by_group`, used by the insights,
   the candidate threshold and the deal list's price hint): only single devices (group determined
   again from the classification or the word rules, not from the stored tracking group), no defect

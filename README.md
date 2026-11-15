@@ -285,8 +285,14 @@ decision on later runs (the word-rule group does not come back). An implausible 
 result, or an unavailable model (logged, the run goes on) leaves the word rules in effect. With a
 callable evaluator (demo, tests) no model is called.
 
-Group regexes (`match`, `exclude`, `veto`) are checked when a search is loaded; an invalid one is
-a configuration error.
+A group may also have `soft_exclude` (since 0.2.17): for the word rules it works like `exclude` (the
+title falls through to later groups), but a plausible classification may overrule it. Use `exclude`
+for "never this group" (another model: "360", "Switch 2", "nur Tablet") and `soft_exclude` for "not
+by the title alone" (game names, editions, "sealed": "Xbox One S 2 Spiele" stays a console when the
+model says so).
+
+Group regexes (`match`, `exclude`, `soft_exclude`, `veto`) are checked when a search is loaded; an
+invalid one is a configuration error.
 
 ### Candidate threshold
 
