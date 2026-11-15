@@ -350,7 +350,8 @@ def refresh(old, items_by_group, groups, flt, mc, log=print, loc=None, pool=None
     kept entry stays exactly as it was written, with its old date, or without "date"/"sample" if it
     still is a value computed with sample all; the log names what was counted and what is kept:
       market X: too little data (device 3, bundle 1, unclassified 12), keeping previous value (sample all, undated)
-    With sample all neither the entries nor the log lines change."""
+    With sample all and without pool neither the entries nor the log lines change; with pool, entries of
+    sample all are dated as well."""
     new = {"_updated": clock.today_str(), "_ts": time.time()}
     est, samples = _estimate_groups(old, items_by_group, groups, flt, mc, loc)
     dated = sample_mode(mc) != "all"

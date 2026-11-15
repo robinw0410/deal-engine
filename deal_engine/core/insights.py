@@ -159,9 +159,12 @@ def apply(cfg, sc, paths, log=print):
                     l["market_group"] = grp["name"]
         l.pop("sold_info", None)
 
-        # 3b. sale price from disappeared listings (only if lower than the asking-price estimate)
+        # 3b. sale price from disappeared listings (only if lower than the asking-price estimate; with a thin
+        # median, fewer than market.median_min_n listings, the sold prices decide alone, as for the threshold)
         s = sold.get(l.get("market_group"))
-        est = sold_estimate(s["p"], l.get("market_resale_estimate_ask"), c["min_sold"], c["sold_factor"]) if s else None
+        thin = (l.get("market_n") or 0) < int(ms["median_min_n"])
+        cap = None if thin else l.get("market_resale_estimate_ask")
+        est = sold_estimate(s["p"], cap, c["min_sold"], c["sold_factor"]) if s else None
         if est is not None:
             l["market_resale_estimate"] = est
             l["sold_info"] = (loc.t("ins.sold", n=len(s["p"]), days=c["window_days"], median=loc.num(median(s["p"])))

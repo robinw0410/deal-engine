@@ -196,6 +196,7 @@ def test_select_logs_the_sold_basis():
                                sold={"Console A": {"p": [130] * 11, "d": [3] * 11}})
     assert len(cands) == 1                                                   # 80 <= 0.7 x 121
     assert cands[0]["market_threshold_basis"] == "sold" and cands[0]["market_threshold_ref"] == 121
+    assert cands[0]["market_resale_estimate"] == 121
     assert any("1 on the sold prices alone (thin median: Console A)" in s for s in logs)
 
 
@@ -213,3 +214,46 @@ def test_pool_only_from_market_source(tmp_path):
     finally:
         con.close()
     assert len(both) == 3 and sorted(it["uid"] for it in wh) == ["t-h1", "t-h2"]
+
+
+def test_add_pool_dedupes_per_group(tmp_path):
+    """A hit of group B's query that belongs to A keeps its stored copy in A's list (each list is estimated
+    on its own, so nothing counts twice)."""
+    db = tmp_path / "h.db"
+    store(db, STORED[:2])
+    sc = {"_name": "s", "market": {"groups": [A]}}
+    hit = {"source": "t", "source_id": "h0", "title": "Console A 500GB", "price": 200}
+    out, pool = add_pool({"Other": [hit], "Console A": []}, db, sc, today=TODAY)
+    assert sorted(it["uid"] for it in out["Console A"]) == ["t-h0", "t-h1"]
+    assert pool["listings"] == {"Other": (1, 0), "Console A": (0, 2)}
+
+
+def test_thin_median_resale_estimate_follows_the_sold_prices(tmp_path):
+    """select() and insights give a listing on the sold basis the resale value from the sold prices, not
+    the asking-price estimate (otherwise the score would rate the new candidates as a loss)."""
+    from deal_engine.core import insights
+    from deal_engine.core.listing import normalize
+    it = normalize({"source_id": "1", "url": "https://example.org/1", "title": "Console A", "price": 80,
+                    "published": str(TODAY), "shipping_possible": True, "shipping_cost_eur": 0}, "test")
+    sc = {**SC, "_name": "s", "filters": {"signal_regex": "defekt"}}
+    thin = {"Console A": {"median": 65, "p25": 55, "n": 5}}
+    (c,), _ = pipeline.select({"1": it}, set(), {}, thin, sc, lambda s: None,
+                              sold={"Console A": {"p": [130] * 11, "d": [3] * 11}})
+    assert c["market_resale_estimate"] == 121
+    # insights: sold estimate without the asking cap when the median is thin, capped when it is reliable
+    db = tmp_path / "h.db"
+    con = history.connect(db)
+    with con:
+        for i in range(11):
+            d = str(TODAY - timedelta(days=5 + i))
+            con.execute("INSERT INTO listing(uid, source, source_id, search, grp, title, defect, published, first_seen,"
+                        " last_seen, first_price, price, private, status, gone_date) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (f"t-s{i}", "t", f"s{i}", "s", "Console A", f"Console A Nr {i}", 0, d, d, d, 130, 130, 1,
+                         "gone", d))
+    con.close()
+    P = {"state": tmp_path / "state.json", "history": db, "market": tmp_path / "m.json"}
+    for m, want in ((thin, 121), ({"Console A": {"median": 65, "p25": 55, "n": 10}}, 55)):
+        P["market"].write_text(json.dumps(m))
+        P["state"].write_text(json.dumps({"listings": [{"id": "t-1", "title": "Console A", "price": 80}]}))
+        insights.apply({}, {**sc, "market": {"groups": [A]}, "track": True}, P, log=lambda *a: None)
+        assert json.loads(P["state"].read_text())["listings"][0]["market_resale_estimate"] == want

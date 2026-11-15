@@ -7,7 +7,7 @@
 - **Market median from a rolling pool**: `update_market()` adds to the current hits of the group
   queries the listings of the search stored in `history.db` that were seen in the last
   `market.pool_days` days (default 30; 0 = hits only, as before), with a price and without the stored
-  defect flag, each listing once (by uid, the current hit wins). Same selection as `sample_report`
+  defect flag, each listing once per group (by uid, the current hit wins). Same selection as `sample_report`
   (new public `market.history_items(con, sc, since)`, also used by `sample_report`), read-only
   (`history.pool_for_search`, never raises; an unreadable database means hits only). The hits of one
   query alone gave medians from 5 to 14 listings (Nintendo Switch 210 € from 5, 3DS 65 € from 5).
@@ -23,6 +23,9 @@
   prices), so the threshold is `flip_ratio` x that value and may be above the one on the median
   (3DS: median 65 € from 5, sold 130 € from 11: threshold 41 € -> 85 €). With a reliable median
   nothing changes (never looser than on the median). The run log names the groups on the sold basis.
+  Such listings get the same resale value as `market_resale_estimate` (in `select()`, and in the
+  insights the sold estimate is not capped by the asking prices when the median is thin), so the score
+  does not rate the new candidates as a loss.
 
 ## 0.2.17 – 2026-11-15
 

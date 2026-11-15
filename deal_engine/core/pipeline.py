@@ -159,20 +159,18 @@ def update_market(cfg, sc, adapter, P, log=print):
 def add_pool(by_group, db, sc, log=print, today=None):
     """(items by group, pool info) for the market median: the current hits of every group plus the stored
     listings of the last market.pool_days days (history.pool_for_search, the same selection as
-    scripts/market_sample.py), each listing once (a current hit replaces its stored copy, by uid).
+    scripts/market_sample.py), each listing once per group (a current hit replaces its stored copy, by uid).
     Pool info for market.refresh, or None if nothing was added (pool_days 0, no or unreadable history.db):
     then the items are the current hits alone, as up to 0.2.17."""
     since, stored = history.pool_for_search(db, sc, log, today)
     if since is None:
         return by_group, None
-    cur = set()
-    for its in by_group.values():
-        for it in its:
-            if it.get("source") is not None and it.get("source_id") is not None:
-                cur.add(history.uid(it))
     out, listings = {}, {}
     for name in dict.fromkeys([*by_group, *stored]):
         mine = list(by_group.get(name) or [])
+        # per group: a current hit of another group's query that belongs here keeps its stored copy here
+        # (every group's list is estimated on its own, so nothing counts twice)
+        cur = {history.uid(it) for it in mine if it.get("source") is not None and it.get("source_id") is not None}
         add = [it for it in stored.get(name) or [] if it["uid"] not in cur]
         out[name] = mine + add
         listings[name] = (len(mine), len(add))
@@ -499,6 +497,8 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
             it["market_resale_estimate"] = resale_from_ask(m, s["sale_factor"])
             ref_unit, basis = ref_of(g["name"])
             it["market_threshold_basis"], it["market_threshold_ref"] = basis, round(ref_unit)
+            if basis == "sold":   # thin median: the resale value is the one from the sold prices (as insights)
+                it["market_resale_estimate"] = round(ref_unit)
             ratio = s["max_price_ratio"] if sig is None else s["defect_price_ratio"] if sig else s["flip_ratio"]
             total = (it.get("price") or 0) + ship
             if qty is None:

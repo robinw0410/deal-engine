@@ -317,7 +317,8 @@ The cap at the median only holds if the median itself is reliable, i.e. counts a
 `market.median_min_n` (default 10) listings (since 0.2.18). Below that, with enough sold prices, the
 basis is `sold`: the reference is the resale value from the cleaned sold prices alone (their median x
 `insights.sold_factor`, not capped by the asking prices), so the threshold is `flip_ratio` x that resale
-value and may be above the one on the median. Example: median 65 € from 5 listings, sold median 130 €
+value and may be above the one on the median; the listing's resale estimate (score, insights) is then that
+value too, not capped by the asking prices. Example: median 65 € from 5 listings, sold median 130 €
 from 11: before 0.2.18 the threshold was about 41 €, now 0.7 x 121 € = 85 €.
 
 ```yaml
