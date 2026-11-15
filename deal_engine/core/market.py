@@ -51,6 +51,8 @@ DEFAULTS = {
     "game_value": 5,            # flat value per game of a bundle (only with sample device_only or when set)
     "game_value_max": 30,       # at most this much for all games of one listing
     "games_default": 2,         # "mit Spielen" without a count
+    "threshold_basis": "resale",  # candidate threshold on the resale value (with enough sold data) or "median"
+    "threshold_min_sold": 8,    # resale basis only with at least this many cleaned sold prices of the group
 }
 SAMPLES = ("all", "device_only")
 
@@ -74,9 +76,17 @@ def sample_mode(mc):
 def check_settings(mc):
     """ValueError with a readable message if market.sample is unknown or one of the numbers of the sample
     settings cannot work: device_min_n and games_default integers >= 0, game_value and game_value_max
-    numbers >= 0 (game_value_max: null = no maximum). Settings that are not given are not checked."""
+    numbers >= 0 (game_value_max: null = no maximum), threshold_basis "resale" or "median",
+    threshold_min_sold an integer >= 1. Settings that are not given are not checked."""
     mc = mc or {}
     sample_mode(mc)
+    if "threshold_basis" in mc and mc["threshold_basis"] not in ("resale", "median"):
+        raise ValueError(f"market.threshold_basis must be one of resale, median, "
+                         f"not {mc['threshold_basis']!r}")
+    if "threshold_min_sold" in mc:
+        v = mc["threshold_min_sold"]
+        if isinstance(v, bool) or not isinstance(v, int) or v < 1:
+            raise ValueError(f"market.threshold_min_sold must be an integer >= 1, not {v!r}")
     for k, whole in (("device_min_n", True), ("games_default", True), ("game_value", False),
                      ("game_value_max", False)):
         if k not in mc or (mc[k] is None and k == "game_value_max"):

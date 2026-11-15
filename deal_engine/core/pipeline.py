@@ -18,7 +18,7 @@ import urllib.request
 from datetime import timedelta
 
 from ..adapters.base import Blocked, check_result
-from . import classify, clock, history
+from . import classify, clock, history, insights
 from . import config as config_mod
 from . import filters as filters_mod
 from . import locale as locale_mod
@@ -26,8 +26,9 @@ from .config import ConfigError
 from .filters import fields_failed, has_signal, hook_failed, passes, title_failed
 from .groups import bundle_qty, drop_part, extras_value, from_classification, is_accessory, is_bundle_group, match_group
 from .listing import EXTRA_NAME, RESERVED, normalize, shipping_unknown
-from .market import (extras_resale, due as market_due, games_value, refresh as market_refresh, resale_from_ask,
-                     sample_mode as market_sample_mode, settings as market_settings)
+from .market import (DEFAULTS as MARKET_DEFAULTS, extras_resale, due as market_due, games_value,
+                     refresh as market_refresh, resale_from_ask, sample_mode as market_sample_mode,
+                     settings as market_settings, sold_estimate)
 from .util import load_json, num, platform_of, save_json
 
 # fields copied from a candidate into a new state entry (if the evaluation did not set them);
@@ -352,8 +353,39 @@ def _cap_names(cap):
     return {str(x) for x in (c if isinstance(c, (list, tuple)) else [c])}
 
 
+def threshold_basis(sc):
+    """market.threshold_basis of a search: "resale" (default) or "median"."""
+    return market_settings((sc or {}).get("market")).get("threshold_basis") or MARKET_DEFAULTS["threshold_basis"]
+
+
+def threshold_ref(m, sold_prices, sc):
+    """Unit reference price of the candidate threshold of one market group: (ref_unit, basis).
+
+    m: the group's market entry {"median", "p25", "n", ...}; sold_prices: the cleaned prices of its
+    disappeared listings (history.sold_for_search(...)[group]["p"]) or None; sc: the search.
+
+    basis "resale" (market.threshold_basis "resale", the default, and at least market.threshold_min_sold
+    sold prices): the unit resale value as insights computes it, min(resale_from_ask, sold_estimate) with
+    sold_factor/min_sold from the search's insights settings, divided by sale_factor again, so that
+    flip_ratio/defect_price_ratio keep their meaning ("x times the market price"). Never above the
+    median: the threshold is never looser than on the median basis.
+    Otherwise basis "median" and ref_unit == m["median"] (the behaviour up to 0.2.16)."""
+    s = market_settings((sc or {}).get("market"))
+    med = m["median"]
+    min_sold = s.get("threshold_min_sold")
+    min_sold = MARKET_DEFAULTS["threshold_min_sold"] if min_sold is None else int(min_sold)
+    sf = float(s["sale_factor"])
+    if threshold_basis(sc) != "resale" or len(sold_prices or ()) < min_sold or sf <= 0:
+        return med, "median"
+    ins = {**insights.DEFAULTS, **((sc or {}).get("insights") or {})}   # the same source as insights.apply
+    ask = resale_from_ask(m, sf)
+    est = sold_estimate(list(sold_prices), ask, ins["min_sold"], ins["sold_factor"])
+    unit = ask if est is None else min(ask, est)
+    return min(med, unit / sf), "resale"
+
+
 def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPPING_COST, adapter_name=None,
-           state_listings=(), loc=None, classified=None, discarded=None):
+           state_listings=(), loc=None, classified=None, discarded=None, sold=None):
     """New candidates: pass the filters, are not known, are cheap enough relative to the market.
     Unknown shipping costs count as unknown_cost, never as 0. Returns (candidates, postponed).
 
@@ -365,7 +397,11 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
     rules for that listing: device/bundle -> that group (qty for controller-like groups),
     accessory -> skipped, other -> no group (no market comparison). Implausible: word rules.
     Spare parts without the device are dropped according to sc["parts"] (groups.drop_part: kind
-    "part", and with parts skip/bundles the word rule market.part_regex / the locale's part rule)."""
+    "part", and with parts skip/bundles the word rule market.part_regex / the locale's part rule).
+
+    sold: {group: {"p": [prices], "d": [days]}} of cleaned disappeared listings
+    (history.sold_for_search); the price threshold of a group uses threshold_ref() on it (resale basis
+    with enough sold prices, otherwise the median). None or {}: median basis for every group."""
     loc = loc or locale_mod.get(sc.get("_locale"))
     flt = sc.get("filters") or {}
     mc = sc.get("market") or {}
@@ -375,6 +411,22 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
     parts, part_rx, n_part = sc.get("parts", "llm"), mc.get("part_regex"), 0
     cands, too_expensive, no_signal, n_cls = [], 0, 0, 0
     hook_rej = []
+    sold = sold if isinstance(sold, dict) else {}
+    refs = {}   # group name -> (ref_unit, basis), see threshold_ref()
+
+    def ref_of(name):
+        if name not in refs:
+            entry = sold.get(name)
+            prices = entry.get("p") if isinstance(entry, dict) else None
+            refs[name] = threshold_ref(market[name], prices, sc)
+        return refs[name]
+
+    in_market = [g["name"] for g in groups if g.get("name") in market and (market[g["name"]] or {}).get("median")]
+    if in_market:
+        on_resale = [n for n in dict.fromkeys(in_market) if ref_of(n)[1] == "resale"]
+        log(f"market threshold: {len(on_resale)} group(s) on the resale basis"
+            f"{' (' + ', '.join(on_resale[:8]) + ')' if on_resale else ''}, "
+            f"{len(dict.fromkeys(in_market)) - len(on_resale)} on the median")
     for sid, it in items.items():
         if not considered(sid, it, known, seen, flt):
             if flt.get("hooks") and sid not in known and it["status"] == "active":
@@ -406,6 +458,8 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
         if m:
             it["market_group"], it["market_median"], it["market_n"] = g["name"], m["median"], m["n"]
             it["market_resale_estimate"] = resale_from_ask(m, s["sale_factor"])
+            ref_unit, basis = ref_of(g["name"])
+            it["market_threshold_basis"], it["market_threshold_ref"] = basis, round(ref_unit)
             ratio = s["max_price_ratio"] if sig is None else s["defect_price_ratio"] if sig else s["flip_ratio"]
             total = (it.get("price") or 0) + ship
             if qty is None:
@@ -422,7 +476,9 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
             if games_n:
                 it["market_games"] = {"count": games_n, "value": games_eur}
                 it["market_resale_estimate"] += games_eur
-            if it.get("price") is not None and total > (m["median"] * qty + extra_eur + games_eur) * float(ratio):
+            # threshold on the unit reference (median, or the resale value with enough sold data; never
+            # above the median); extras and games keep their values (see threshold_ref)
+            if it.get("price") is not None and total > (ref_unit * qty + extra_eur + games_eur) * float(ratio):
                 too_expensive += 1
                 continue
         elif sig is False:
@@ -625,8 +681,17 @@ def collect(cfg, sc, adapter, log=print, classify_first=False, classify_budget=N
                 log(f"  classification before selection failed, word rules stay: {type(e).__name__}: {e}")
                 by_uid = {}
             classified = {it["source_id"]: by_uid[history.uid(it)] for it in items.values() if history.uid(it) in by_uid}
+        # cleaned disappeared listings for the price threshold (resale basis), once per collect;
+        # unreadable -> {} -> median basis
+        sold = None
+        if market and mc.get("groups") and threshold_basis(sc) == "resale":
+            try:
+                sold = history.sold_for_search(P["history"], sc, log=log)
+            except Exception as e:
+                log(f"  sold prices for the price threshold not loaded, median basis: {type(e).__name__}: {e}")
+                sold = {}
         cands, skipped = select(items, known, seen, market, sc, log, unknown_cost, adapter.name,
-                                state["listings"], loc, classified=classified, discarded=discarded)
+                                state["listings"], loc, classified=classified, discarded=discarded, sold=sold)
         if discarded:
             # never evaluated, but marked as seen so they don't come back every run (unless the
             # price drops by 10 %, see considered()); saved now, merge() may not run or see them
