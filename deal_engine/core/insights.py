@@ -3,7 +3,8 @@
 1. Time online and price drops per listing (for the negotiation hint)
 2. Relisted items (the same item was online before and disappeared)
 3. Market group, resale estimate from asking prices, and - once a group has enough data -
-   the sale price from disappeared listings (replaces the asking-price estimate if lower)
+   the sale price from disappeared listings (replaces the asking-price estimate if lower); by default
+   only disappeared single devices, once per repost chain (sold_clean, history.sold_by_group)
 4. Bundles: unit resale price x quantity x bundle discount
 
 Runs after every run, before score.py. Only for searches with "track: true".
@@ -18,7 +19,15 @@ from .market import extras_resale, games_value, resale_from_ask, settings as mar
 from .score import negotiation_head, opening_discount
 from .util import load_json, median, save_json
 
-DEFAULTS = {"min_sold": 8, "window_days": 60, "sold_factor": 0.93, "relist_days": 45, "bundle_discount": 0.9}
+DEFAULTS = {"min_sold": 8, "window_days": 60, "sold_factor": 0.93, "relist_days": 45, "bundle_discount": 0.9,
+            # sale price from disappeared listings: only single devices, once per repost chain, from
+            # market.source and these countries (history.sold_by_group / sold_settings); false = as before 0.2.17
+            "sold_clean": True, "sold_dedup_days": 14, "sold_countries": ["AT", "DE"]}
+
+
+def settings(sc):
+    """The insights settings of search `sc` (its "insights" block over DEFAULTS)."""
+    return {**DEFAULTS, **((sc or {}).get("insights") or {})}
 
 
 def days(a, b=None):
@@ -79,7 +88,7 @@ def apply(cfg, sc, paths, log=print):
         return 0
     name = sc["_name"]
     loc = locale_mod.for_search(cfg, sc)
-    c = {**DEFAULTS, **(sc.get("insights") or {})}
+    c = settings(sc)
     state = load_json(paths["state"], {"listings": []})
     mc = sc.get("market") or {}
     ms = market_settings(mc)
@@ -87,7 +96,8 @@ def apply(cfg, sc, paths, log=print):
     market = load_json(paths["market"], {})
     formula = bool((sc.get("score") or {}).get("enabled"))
     con = history.connect(paths["history"])
-    sold = history.sold_by_group(con, name, c["window_days"])
+    sold = history.sold_by_group(con, name, c["window_days"],
+                                 clean=history.sold_settings(sc) if c["sold_clean"] else None)
 
     n_sold = n_relist = 0
     for l in state.get("listings", []):

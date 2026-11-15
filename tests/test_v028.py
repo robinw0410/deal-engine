@@ -50,7 +50,7 @@ def test_insights_adds_extras_once_per_run(tmp_path, monkeypatch):
 
     def run(title, sold=None, cls=None):
         P["state"].write_text(json.dumps({"listings": [{"id": "x", "title": title, "price": 100}]}))
-        monkeypatch.setattr(insights.history, "sold_by_group", lambda con, n, w: sold or {})
+        monkeypatch.setattr(insights.history, "sold_by_group", lambda con, n, w, clean=None: sold or {})
         monkeypatch.setattr(insights, "classified", lambda con, k, t: cls)
         out = []
         for _ in range(3):

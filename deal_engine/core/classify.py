@@ -9,8 +9,9 @@ Two places use it, both only with the LLM evaluator ("claude"):
 Only titles that the word rules could match at all go to the model, and each listing only once
 (result in history.db, table classify, key "<adapter>-<source_id>"). If the model is unavailable,
 the word rules stay in effect. A result is only used if it is plausible: a group named by the
-model must have a match regex that hits the title (groups.from_classification), otherwise the
-word rules decide. classify.max_per_run limits the titles per search run (Budget, shared by
+model must have a match regex that hits the title, and neither its veto nor (with the fall-through
+exception described there) its exclude may rule the title out (groups.from_classification), otherwise
+the word rules decide. classify.max_per_run limits the titles per search run (Budget, shared by
 both steps and all adapters of a run_search; with market.sample device_only also by the bundles the
 group queries note for the market median, see history.track).
 
