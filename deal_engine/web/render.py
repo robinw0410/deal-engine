@@ -916,11 +916,12 @@ def card(l, page, cfg):
         links += (f'<button type="button" data-copy>{esc(ui(loc, "copy_prompt"))}</button>'
                   f'<textarea hidden>{esc(prompt_text(l, loc))}</textarea>')
     if page.get("deal_link"):
+        sc = num(l.get("score"))   # only a numeric score (the deal list refuses anything else)
         q = urlencode({k: v for k, v in {
             "item": l.get("title"), "price": l.get("price"), "link": (l.get("urls") or [""])[0],
             "cat": l.get("market_group") or l.get("device") or "", "other": l.get("shipping_cost_eur") or "",
             "lid": l.get("id"), "profit": l.get("expected_profit_eur"), "hours": l.get("repair_hours"),
-            "grp": l.get("market_group")}.items() if v not in (None, "")})
+            "grp": l.get("market_group"), "score": l.get("score") if sc is not None and 0 <= sc <= 10 else None}.items() if v not in (None, "")})
         links += f'<a href="../deals/?{esc(q)}">{esc(ui(loc, "deal_link"))}</a>'
     failed = (f'<p class="note warn">{esc(ui(loc, "failed", v=l["last_check_failed"]))}</p>'
               if l.get("last_check_failed") else "")

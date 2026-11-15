@@ -175,7 +175,7 @@ footer{margin-top:40px;color:var(--muted);font-size:.78rem}
     <div class="hintbox wide" id="hintBox" hidden></div>
     <div class="calc wide" id="calc"></div>
     <div class="botest wide" id="botEst"></div>
-    <input type="hidden" name="listing_id"><input type="hidden" name="est_profit"><input type="hidden" name="est_hours">
+    <input type="hidden" name="listing_id"><input type="hidden" name="est_profit"><input type="hidden" name="est_hours"><input type="hidden" name="score">
   </div>
   <div class="df"><button type="button" class="danger ghost" id="dDel" hidden>{{btn.delete}}</button><span class="err" id="dErr"></span><span class="sp"></span>
     <button type="button" data-close>{{btn.cancel}}</button><button class="primary" type="submit">{{btn.save}}</button></div>
@@ -321,7 +321,8 @@ footer{margin-top:40px;color:var(--muted);font-size:.78rem}
       var parts = (d.parts || []).map(function (x) { return '<span class="tag">' + esc(x.name) + (x.qty > 1 ? " ×" + x.qty : "") + "</span>"; }).join("");
       return '<div class="deal" data-id="' + d.id + '"><div class="t">' + esc(d.item) + '</div><div class="r">' + right + "</div>" +
         '<div class="m"><span class="pill s-' + esc(d.status.replace(" ", "-")) + '">' + esc(status(d.status)) + "</span>" +
-        (d.category ? "<span>" + esc(d.category) + "</span>" : "") + "<span>" + esc(d.bought_date || "") + "</span>" + parts + "</div>" +
+        (d.category ? "<span>" + esc(d.category) + "</span>" : "") + "<span>" + esc(d.bought_date || "") + "</span>" +
+        (has(d.score) ? '<span class="tag" title="' + th("deal.score_title") + '">' + th("deal.score", { v: esc(num(d.score)) }) + "</span>" : "") + parts + "</div>" +
         (!done(d) && d.price_hint && d.price_hint.list ? '<div class="hint">' + th("deal.hint", { list: eur(d.price_hint.list), floor: eur(d.price_hint.floor) }) + "</div>" : "") +
         "</div>";
     }).join("") || '<div class="empty">' + th(dFilter === "open" ? "empty.open" : "empty.deals") + "</div>";
@@ -442,8 +443,10 @@ footer{margin-top:40px;color:var(--muted);font-size:.78rem}
     if (!d && !has(src.bought_date)) dForm.elements.bought_date.value = new Date().toISOString().slice(0, 10);
     used = d ? (d.parts || []).map(function (x) { return { part_id: x.part_id, qty: x.qty, unit_cost: x.unit_cost, name: x.name }; }) : [];
     $("dTitle").textContent = t(d ? "dlg.edit_deal" : "dlg.new_deal"); $("dDel").hidden = !d;
-    var e = src.est_profit, h = src.est_hours;
-    $("botEst").textContent = has(e) ? t("est.text", { v: eur(n(e), 1) }) + (has(h) ? t("est.hours", { h: num(h) }) : "") : "";
+    var e = src.est_profit, h = src.est_hours, sc = src.score;
+    $("botEst").textContent = (has(e) ? t("est.text", { v: eur(n(e), 1) }) + (has(h) ? t("est.hours", { h: num(h) }) : "") : "") +
+      (has(sc) ? (has(e) ? " · " : "") + t("est.score", { v: num(sc) }) : "") +
+      (has(src.listing_id) ? (has(e) || has(sc) ? " · " : "") + t("est.listing", { id: src.listing_id }) : "");
     renderUsed(); $("dDlg").showModal();
   }
   $("partAdd").onclick = function () {
@@ -508,13 +511,14 @@ footer{margin-top:40px;color:var(--muted);font-size:.78rem}
   // ---------------------------------------------------------------- Start
   setTab(["overview", "deals", "stock"].indexOf(location.hash.slice(1)) >= 0 ? location.hash.slice(1) : "deals");
   api("GET", "api/all").then(function () {
-    // prefill from a search page: ?item=…&price=…&link=…&cat=…&other=…&lid=…&profit=…&hours=…&grp=…
+    // prefill from a search page: ?item=…&price=…&link=…&cat=…&other=…&lid=…&profit=…&hours=…&grp=…&score=…
+    // (the server fills market group, score, profit and hours from the listing lid when they are empty)
     var q = new URLSearchParams(location.search);
     if (q.get("item")) {
       setTab("deals");
       openDeal(null, { item: q.get("item"), buy_price: q.get("price"), link: q.get("link"), category: q.get("cat"),
         other_cost: q.get("other"), listing_id: q.get("lid"), est_profit: q.get("profit"), est_hours: q.get("hours"),
-        market_group: q.get("grp") });
+        market_group: q.get("grp"), score: q.get("score") });
       history.replaceState(null, "", location.pathname + "#deals");
     }
   }).catch(function (e) { $("gerr").textContent = t("err.load", { msg: e.message }); });
