@@ -335,7 +335,7 @@ def test_insights_adds_the_games_once_per_run_and_drops_them_without_the_setting
     P = {"state": tmp_path / "state.json", "history": tmp_path / "h.db", "market": tmp_path / "m.json"}
     history.connect(P["history"]).close()
     P["market"].write_text(json.dumps(MARKET))
-    monkeypatch.setattr(insights.history, "sold_by_group", lambda con, n, w: {})
+    monkeypatch.setattr(insights.history, "sold_by_group", lambda con, n, w, clean=None: {})
     P["state"].write_text(json.dumps({"listings": [
         {"id": "x", "title": "PS4 Slim + 2 Controller + 6 Spiele", "price": 100},
         {"id": "y", "title": "PS4 500GB", "price": 100}]}))

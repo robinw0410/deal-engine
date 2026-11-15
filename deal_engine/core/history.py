@@ -46,8 +46,11 @@ def connect(db):
     con = sqlite3.connect(db, timeout=60)
     con.execute("PRAGMA journal_mode=WAL")
     con.executescript(SCHEMA)
-    if "location" not in [r[1] for r in con.execute("PRAGMA table_info(listing)")]:
+    cols = [r[1] for r in con.execute("PRAGMA table_info(listing)")]
+    if "location" not in cols:
         con.execute("ALTER TABLE listing ADD COLUMN location TEXT")   # databases from before 0.1.0
+    if "seller" not in cols:
+        con.execute("ALTER TABLE listing ADD COLUMN seller TEXT")     # databases from before 0.2.17
     return con
 
 
@@ -105,27 +108,32 @@ def _flag(v):
 
 def _upsert(con, search, it, grp, defect, exact=False):
     """Insert or update a listing. exact: set grp as given, also to NULL (a plausible LLM
-    classification decided it); otherwise a missing word-rule group keeps the stored one."""
+    classification decided it); otherwise a missing word-rule group keeps the stored one.
+    seller: the item's optional "_seller" (an adapter's seller key, no name; listing.normalize), only
+    used to recognise reposts in sold_by_group; a missing one keeps the stored one."""
     key, p, today = uid(it), it.get("price"), clock.today_str()
+    seller = str(it.get("_seller") or "")[:120] or None
     row = con.execute("SELECT price FROM listing WHERE uid=?", (key,)).fetchone()
     if row is None:
         con.execute("""INSERT INTO listing(uid, source, source_id, search, grp, title, defect, published,
-                       first_seen, last_seen, first_price, price, private, shipping, distance_km, image, location)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       first_seen, last_seen, first_price, price, private, shipping, distance_km, image, location,
+                       seller)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (key, it["source"], it["source_id"], search, grp, (it.get("title") or "")[:TITLE_LEN], defect,
                      it.get("_published"), today, today, p, p, _flag(it.get("private")),
                      _flag(it.get("shipping_possible")), it.get("distance_km"), it.get("_image"),
-                     (it.get("location") or "")[:120] or None))
+                     (it.get("location") or "")[:120] or None, seller))
         if p is not None:
             con.execute("INSERT OR REPLACE INTO price VALUES (?,?,?)", (key, today, p))
         return
     old_p = row[0]
     grp_sql = "?" if exact else "COALESCE(?, grp)"
     con.execute(f"""UPDATE listing SET last_seen=?, price=?, title=?, grp={grp_sql}, defect=?,
-                    status='active', gone_date=NULL, image=COALESCE(image, ?), location=COALESCE(location, ?)
+                    status='active', gone_date=NULL, image=COALESCE(image, ?), location=COALESCE(location, ?),
+                    seller=COALESCE(?, seller)
                     WHERE uid=?""",
                 (today, p if p is not None else old_p, (it.get("title") or "")[:TITLE_LEN], grp, defect,
-                 it.get("_image"), (it.get("location") or "")[:120] or None, key))
+                 it.get("_image"), (it.get("location") or "")[:120] or None, seller, key))
     if p is not None and old_p is not None and abs(p - old_p) >= 1:
         con.execute("INSERT OR REPLACE INTO price VALUES (?,?,?)", (key, today, p))
 
@@ -271,8 +279,15 @@ def _days(a, b):
         return None
 
 
-def sold_by_group(con, search, window_days=60):
-    """{group: {"p": [prices], "d": [days online]}} of non-defective listings that disappeared."""
+def sold_by_group(con, search, window_days=60, clean=None):
+    """{group: {"p": [prices], "d": [days online]}} of listings of `search` that disappeared in the last
+    `window_days` days.
+
+    clean=None: as before 0.2.17, every non-defective disappeared listing with a price under its stored
+    tracking group (listing.grp). clean: the settings of sold_settings(sc); only disappeared single devices
+    count, once per repost chain (see _sold_clean)."""
+    if clean is not None:
+        return _sold_clean(con, search, window_days, clean)
     since = str(clock.today() - timedelta(days=window_days))
     sold = {}
     for grp, price, start, gone in con.execute(
@@ -282,6 +297,228 @@ def sold_by_group(con, search, window_days=60):
         s = sold.setdefault(grp, {"p": [], "d": []})
         s["p"].append(price)
         d = _days(start, gone)
+        if d is not None and d >= 0:
+            s["d"].append(d)
+    return sold
+
+
+SOLD_COUNTRIES = ("AT", "DE")
+SOLD_DEDUP_DAYS = 14
+
+
+def sold_settings(sc):
+    """Settings of the cleaned statistics of disappeared listings (sold_by_group clean=...) of search `sc`:
+    its market groups, sample, accessory/exclude regexes, defect filters and locale, market.source, and
+    from the insights settings (insights.settings) sold_countries and sold_dedup_days."""
+    from . import insights   # imports this module
+    mc = sc.get("market") or {}
+    c = insights.settings(sc)
+    try:
+        dedup = max(0, int(c.get("sold_dedup_days")))
+    except (TypeError, ValueError):
+        dedup = SOLD_DEDUP_DAYS
+    countries = c.get("sold_countries")
+    countries = SOLD_COUNTRIES if countries is None else [countries] if isinstance(countries, str) else countries
+    return {"groups": mc.get("groups") or [], "source": mc.get("source") or None,
+            "sample": (mc.get("sample") or "all"), "accessory_regex": mc.get("accessory_regex"),
+            "exclude_regex": mc.get("exclude_regex"), "filters": sc.get("filters") or {},
+            "locale": sc.get("_locale") or "en", "dedup_days": dedup,
+            "countries": [str(x).strip().upper() for x in countries]}
+
+
+def sold_for_search(db, sc, window_days=None, clean=True, log=print):
+    """sold_by_group() of search `sc` from history.db `db`, opened read-only (connect_ro). window_days:
+    default the search's insights window_days. clean=True: cleaned (sold_settings) unless the search turns
+    it off with insights sold_clean: false; clean=False: as before 0.2.17. Never raises: a missing or
+    unreadable database gives {} (with a log line if unreadable)."""
+    try:
+        if not Path(db).exists():
+            return {}
+        from . import insights
+        c = insights.settings(sc)
+        w = c["window_days"] if window_days is None else window_days
+        con = connect_ro(db)
+        try:
+            return sold_by_group(con, sc["_name"], w, sold_settings(sc) if clean and c.get("sold_clean") else None)
+        finally:
+            con.close()
+    except Exception as e:   # like tracking: never break a run
+        log(f"  sale prices from tracking not readable: {type(e).__name__}: {e}")
+        return {}
+
+
+_COUNTRY = re.compile(r"([A-Z]{2})(?:\s|$)")
+
+
+def _domestic(source, location, countries):
+    """eBay locations start with the country code ("DE 12345 Stadt", "US 805**", "JP"): only the listed
+    countries count, an eBay listing without a code does not. Other sources: a leading code is checked
+    the same way, a location without one ("2700 Wiener Neustadt") is domestic."""
+    m = _COUNTRY.match(location or "")
+    if m:
+        return m.group(1) in countries
+    return source != "ebay"
+
+
+def _image_key(source, image):
+    """The same photo: willhaben stores it under a new path per listing but keeps the part after the last
+    "_" ("9/115/498/0969_-1137064254.jpg"), other sources (eBay) reuse the whole URL."""
+    if not image:
+        return None
+    if source == "willhaben" and "_" in image:
+        k = image.rsplit("_", 1)[1]
+        return k if len(k) >= 6 else image
+    return image
+
+
+def _norm_title(t):
+    return " ".join(re.sub(r"[\W_]+", " ", str(t or "").lower()).split())
+
+
+def _close(a, b, rel):
+    return a is not None and b is not None and abs(a - b) <= rel * max(abs(a), abs(b))
+
+
+def _sold_clean(con, search, window_days, cs):
+    """sold_by_group() with clean settings `cs` (sold_settings). A disappeared listing counts only if
+
+      - it is a single device of a group, determined again from the title (listing.grp is not trusted,
+        it can be outdated): a plausible stored classification (same title, groups.from_classification,
+        so exclude/veto apply) of kind device with quantity 1 and no extras in a with-clause; without
+        one (or an implausible one) only with market.sample all, by the word rules as in
+        market.estimate (group, no accessory, bundle quantity 1, no extras);
+      - not defective: stored flag 0, no defect signal in the title (filters.signal_regex), not hit by
+        market.exclude_regex / the locale's market_exclude; price within the group's min/max;
+      - from market.source if the search sets one (otherwise every source);
+      - domestic (_domestic: eBay only with a country code from sold_countries);
+      - it is the last link of its repost chain.
+
+    Repost chains: listings of the same source are one item when, with at most sold_dedup_days between
+    the end of one and the start of the next (overlapping ones too: parallel copies of a dealer)
+      a) the normalised titles are equal, the prices equal after rounding to whole EUR or within
+         +-2 % (a repost keeps the price or cuts it a little; rounding alone would split 149 and 150,
+         +-2 % alone 9.99 and 10.20), and neither the photos (_image_key) nor the location texts differ
+         where both listings have one: a repost or a dealer's parallel copy reuses the photo, while
+         generic titles ("Xbox Series S" for 200 EUR: 10 disappeared willhaben listings, 9 different
+         photos in the test data) come from different sellers, or
+      b) the same seller key (listing.seller) or the same photo (_image_key), the same group (by
+         classification or word rules) and prices within +-10 %. The seller or photo alone is no repost:
+         dealers sell many different devices under one account and often with one shop photo.
+    A chain counts at most once, and only if its last link (most recently seen; on equal days an active
+    one) disappeared in the window: a listing replaced by a repost was not sold. Price of that last
+    link, days online from the start of the chain's first link.
+
+    Loads the listings of the search seen in the window (plus sold_dedup_days) once and groups them in
+    Python; no correlated subquery."""
+    from .market import _in_range   # market imports this module
+    loc = locale_mod.get(cs.get("locale") or "en")
+    groups = cs.get("groups") or []
+    flt = cs.get("filters") or {}
+    excl = cs.get("exclude_regex") or loc.market_exclude
+    acc = cs.get("accessory_regex")
+    countries = set(cs.get("countries") or ())
+    source = cs.get("source")
+    dedup = int(cs.get("dedup_days", SOLD_DEDUP_DAYS))
+    word_only = (cs.get("sample") or "all") == "all"
+    since_d = clock.today() - timedelta(days=window_days)
+    since, load_since = str(since_d), str(since_d - timedelta(days=dedup))
+    has_seller = "seller" in [r[1] for r in con.execute("PRAGMA table_info(listing)")]
+    rows = con.execute(
+        f"""SELECT l.source, l.title, l.price, COALESCE(l.defect,0), COALESCE(l.published, l.first_seen),
+                   l.first_seen, l.last_seen, l.status, l.gone_date, l.image, l.location,
+                   {"l.seller" if has_seller else "NULL"}, c.uid, c.title, c.grp, c.qty, c.kind
+            FROM listing l LEFT JOIN classify c ON c.uid = l.uid
+            WHERE l.search=? AND l.last_seen>=?""", (search, load_since)).fetchall()
+
+    def cls(r):
+        t = (r[1] or "")[:TITLE_LEN]
+        c = (r[14], r[15] or 1, r[16]) if r[12] is not None and r[13] == t else None
+        return t, from_classification(t, c, groups)
+
+    def group_any(i):   # group for the photo/seller rule, kind does not matter
+        if i not in g_any:
+            t, c = cls(rows[i])
+            g = c[1] if c is not None else match_group(t, groups)
+            g_any[i] = g["name"] if g else None
+        return g_any[i]
+
+    def counted(r):   # the group a disappeared listing counts for, or None
+        src, title, price, defect, _, _, _, status, gone = r[:9]
+        if status != "gone" or not gone or gone < since or price is None or defect:
+            return None
+        if (source and src != source) or not _domestic(src, r[10], countries):
+            return None
+        t, c = cls(r)
+        if has_signal({"title": t}, flt) or re.search(excl, t, re.I):
+            return None
+        if c is not None:
+            kind, g, q = c
+            if kind != "device" or g is None or q != 1 or has_extras(t, loc):
+                return None
+        elif word_only:
+            g = match_group(t, groups)
+            if not g or is_accessory(t, acc, loc) or bundle_qty(t, g, loc) > 1 or has_extras(t, loc):
+                return None
+        else:
+            return None   # market.sample device_only: not classified, not counted
+        return g if _in_range(price, g) else None
+
+    # repost chains (union-find over the rows)
+    parent = list(range(len(rows)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def near(i, j):   # at most `dedup` days from the end of the earlier to the start of the later one
+        a, b = (i, j) if (rows[i][5] or "") <= (rows[j][5] or "") else (j, i)
+        d = _days(rows[a][6], rows[b][5])
+        return d is None or d <= dedup
+
+    by_title, by_key = {}, {}
+    keys = [_image_key(r[0], r[9]) for r in rows]
+    places = [_norm_title(r[10]) for r in rows]
+    for i, r in enumerate(rows):
+        if r[2] is None:
+            continue
+        by_title.setdefault((r[0], _norm_title(r[1])), []).append(i)
+        k = keys[i]
+        if k:
+            by_key.setdefault((r[0], "img", k), []).append(i)
+        if r[11]:
+            by_key.setdefault((r[0], "seller", r[11]), []).append(i)
+    g_any = {}
+    for idx in by_title.values():
+        for x, i in enumerate(idx):
+            for j in idx[x + 1:]:
+                pi, pj = rows[i][2], rows[j][2]
+                li, lj, ki, kj = places[i], places[j], keys[i], keys[j]
+                if (round(pi) == round(pj) or _close(pi, pj, 0.02)) and (not li or not lj or li == lj) \
+                        and (not ki or not kj or ki == kj) and near(i, j):
+                    parent[find(i)] = find(j)
+    for idx in by_key.values():
+        for x, i in enumerate(idx):
+            for j in idx[x + 1:]:
+                if find(i) == find(j) or not _close(rows[i][2], rows[j][2], 0.10) or not near(i, j):
+                    continue
+                gi = group_any(i)
+                if gi is not None and gi == group_any(j):
+                    parent[find(i)] = find(j)
+
+    chains = {}
+    for i in range(len(rows)):
+        chains.setdefault(find(i), []).append(i)
+    sold = {}
+    for members in chains.values():
+        last = max(members, key=lambda i: (rows[i][6] or "", rows[i][7] == "active", rows[i][5] or ""))
+        g = counted(rows[last])
+        if g is None:
+            continue
+        s = sold.setdefault(g["name"], {"p": [], "d": []})
+        s["p"].append(rows[last][2])
+        d = _days(min(rows[i][4] or rows[i][5] or "" for i in members), rows[last][8])
         if d is not None and d >= 0:
             s["d"].append(d)
     return sold

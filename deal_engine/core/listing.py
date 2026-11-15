@@ -4,6 +4,10 @@ docs/listing-format.md, and normalize() turns them into the internal item dict.
 Internal keys starting with "_" are working data (full text for regex signals, publish date,
 first image) and are never written into evaluation batches or the state file.
 
+"seller" (optional, since 0.2.17) is an opaque seller key of the platform (an id, never a name); it
+becomes "_seller" and is only stored in history.db to recognise reposts (history.sold_by_group). It is
+no extra field.
+
 Fields that are not part of the format (e.g. "km", "year", "ps", "size") are kept as real fields
 of the item if their name is lowercase letters/digits/underscores, not reserved, and the value is
 a number, a string or a bool. They go into the evaluation batches, can be used by numeric filters
@@ -17,7 +21,7 @@ REQUIRED = ("source_id", "url", "title")
 STATUSES = ("active", "reserved")
 FORMAT = {"source_id", "url", "title", "price", "location", "lat", "lon", "distance_km", "shipping_possible",
           "shipping_cost", "private", "condition", "for_parts", "auction", "auction_end", "best_offer", "status",
-          "attrs", "description", "images", "published"}
+          "attrs", "description", "images", "published", "seller"}
 # names an adapter must not use for extra fields (state, evaluation and computed fields)
 RESERVED = {"id", "source", "sources", "urls", "price_history", "first_seen", "last_seen", "score", "score_ai",
             "score_exact", "score_calc", "tier", "tier_ai", "summary", "issues", "merge_into", "reject",
@@ -99,6 +103,7 @@ def normalize(raw, source, home=None, road_factor=1.3):
         "_published": _date(raw.get("published")),
         "_image": images[0] if images else None,
         "_img_urls": images,
+        "_seller": str(raw.get("seller") or "").strip()[:120] or None,
     }
 
 
