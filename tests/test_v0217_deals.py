@@ -75,6 +75,11 @@ def status_of(method, url, body):
     return 200, None
 
 
+def item(data, name):
+    (d,) = [d for d in data["deals"] if d["item"] == name]
+    return d
+
+
 def only(data):
     assert len(data["deals"]) == 1
     return data["deals"][0]
@@ -160,8 +165,8 @@ def test_no_state_files_at_all(srv):
     assert d["listing_id"] == "ebay-123" and d["score"] is None
 
 
-@pytest.mark.parametrize("lid", ["willhaben", "Willhaben-1", "willhaben-1/../x", "x-" + "1" * 65, "a b-1",
-                                 "willhaben-1;DROP", "-1"])
+@pytest.mark.parametrize("lid", ["willhaben", "Willhaben-1", "willhaben-1/../x", "x-" + "1" * 201, "a b-1",
+                                 "willhaben-1 2", "-1"])
 def test_invalid_lid_refused(srv, lid):
     _, base = srv
     code, err = status_of("POST", base + "/deals/api/deals", {"item": "x", "listing_id": lid})
@@ -241,9 +246,21 @@ def test_put_with_new_listing_id_fills_empty_fields(srv):
     write_state(cfg, "s", [LISTING])
     d = only(call("POST", base + "/deals/api/deals", {"item": "x", "est_profit": "5"}))
     assert d["listing_id"] is None
-    d = only(call("PUT", base + f"/deals/api/deals/{d['id']}", {"listing_id": LISTING["id"]}))
-    assert (d["listing_id"], d["score"], d["market_group"], d["est_profit"], d["est_hours"]) == \
-           (LISTING["id"], 7.0, "Switch OLED", 5.0, 0.5)
+    # a new listing replaces the estimates the request does not send (review 0.2.17) ...
+    d2 = only(call("PUT", base + f"/deals/api/deals/{d['id']}", {"listing_id": LISTING["id"]}))
+    assert (d2["listing_id"], d2["score"], d2["market_group"], d2["est_profit"], d2["est_hours"]) == \
+           (LISTING["id"], 7.0, "Switch OLED", 29.5, 0.5)
+    # ... values sent along win
+    d3 = item(call("POST", base + "/deals/api/deals", {"item": "y"}), "y")
+    d3 = item(call("PUT", base + f"/deals/api/deals/{d3['id']}", {"listing_id": LISTING["id"], "est_profit": "5"}), "y")
+    assert (d3["est_profit"], d3["score"]) == (5.0, 7.0)
+
+
+def test_source_ids_with_dots_and_long_ids_are_valid(srv):
+    _, base = srv
+    for lid in ("json_file-ab.cd:12", "my-adapter-" + "x" * 150):
+        d = item(call("POST", base + "/deals/api/deals", {"item": lid, "listing_id": lid}), lid)
+        assert d["listing_id"] == lid
 
 
 def test_put_invalid_lid_refused(srv):

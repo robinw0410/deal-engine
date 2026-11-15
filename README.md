@@ -271,11 +271,14 @@ queries count against it too.
 
 A stored result is only used when it is **plausible**: a group named by the model must have a
 `match` regex that hits the title, and neither that group's `veto` nor its `exclude` may hit it.
-One exception for `exclude`: if it only passes the title on to a later group that matches it, the
-model may overrule that fall-through. So "DualSense for PS5 console" may go to DualSense, but
-"Xbox 360 Controller" never to Xbox Controller when 360 is in its exclude, and "Switch 2 Pro
-Controller" never to Switch Pro Controller when an earlier group takes it (since 0.2.17; before,
-`exclude` was ignored here). An implausible result counts neither for the median nor for the sale
+One exception for `exclude`: if it only passes the title on to a later group that really takes it
+by the word rules (and no earlier group does), the model may overrule that fall-through ("Switch /
+OLED Joy-Con links" falls from the Joy-Con group to Switch OLED; the model's Joy-Con group stands). A
+later group that only matches and excludes or vetoes the title itself does not count. So "Xbox 360
+Controller" never goes to Xbox Controller when 360 is in its exclude, and "Switch 2 Pro Controller"
+never to Switch Pro Controller when an earlier group takes it (since 0.2.17; before, `exclude` was
+ignored here). Rules the model may overrule in general ("DualSense for PS5 console") belong in
+`soft_exclude`. An implausible result counts neither for the median nor for the sale
 price from disappeared listings of that group. Then it replaces
 the word rules for that listing — in the candidate selection, in tracking (`listing.grp`) and in
 the insights: `device`/`bundle` → that group (and quantity for controller-like groups),

@@ -125,9 +125,17 @@ def test_plain_titles_and_the_fall_through_keep_the_model():
     assert match_group(t, REAL)["name"] == "Switch OLED"
     assert named(t, "Joy-Con einzeln") == "Joy-Con einzeln"
     assert classified_market_group(t, 20, REAL, ("Joy-Con einzeln", 1, "device"))["name"] == "Joy-Con einzeln"
-    # the later group's veto stops the fall-through: still a fall-through, the model decides
+    # a later group that only matches (its veto stops the title) does not take it: the exclude stands;
+    # a config that wants the model to decide here puts that rule in soft_exclude
     t = "Nintendo Switch OLED Joy-Con Controller Paar Weiß"
-    assert match_group(t, REAL) is None and named(t, "Joy-Con Paar") == "Joy-Con Paar"
+    assert match_group(t, REAL) is None and named(t, "Joy-Con Paar") is None
+
+
+def test_exclude_stands_when_no_later_group_takes_the_title():
+    """Review 0.2.17: a later group that matches but excludes the title itself is no fall-through."""
+    assert named("Nintendo Switch OLED nur Tablet", "Switch OLED") is None
+    assert named("Joy-Con 2 rechts", "Joy-Con einzeln") is None
+    assert named("Nintendo Switch 2 Joy-Con links", "Joy-Con einzeln") is None
 
 def test_rule_with_small_groups():
     a = {"name": "A", "match": "ps5", "exclude": "slim|defekt"}

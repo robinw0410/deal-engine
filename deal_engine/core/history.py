@@ -489,23 +489,34 @@ def _sold_clean(con, search, window_days, cs):
             by_key.setdefault((r[0], "img", k), []).append(i)
         if r[11]:
             by_key.setdefault((r[0], "seller", r[11]), []).append(i)
+    def pairs(idx):
+        """(i, j) of one bucket that can be near(): sorted by first_seen, the inner loop stops once a later
+        listing starts more than `dedup` days after the end of i (all after it start later still), so a
+        dealer with thousands of listings under one key costs about n x the listings per window, not n^2."""
+        idx = sorted(idx, key=lambda i: rows[i][5] or "")
+        for x, i in enumerate(idx):
+            end = rows[i][6]
+            for j in idx[x + 1:]:
+                d = _days(end, rows[j][5])
+                if d is not None and d > dedup:
+                    break
+                yield i, j
+
     g_any = {}
     for idx in by_title.values():
-        for x, i in enumerate(idx):
-            for j in idx[x + 1:]:
-                pi, pj = rows[i][2], rows[j][2]
-                li, lj, ki, kj = places[i], places[j], keys[i], keys[j]
-                if (round(pi) == round(pj) or _close(pi, pj, 0.02)) and (not li or not lj or li == lj) \
-                        and (not ki or not kj or ki == kj) and near(i, j):
-                    parent[find(i)] = find(j)
+        for i, j in pairs(idx):
+            pi, pj = rows[i][2], rows[j][2]
+            li, lj, ki, kj = places[i], places[j], keys[i], keys[j]
+            if (round(pi) == round(pj) or _close(pi, pj, 0.02)) and (not li or not lj or li == lj) \
+                    and (not ki or not kj or ki == kj) and near(i, j):
+                parent[find(i)] = find(j)
     for idx in by_key.values():
-        for x, i in enumerate(idx):
-            for j in idx[x + 1:]:
-                if find(i) == find(j) or not _close(rows[i][2], rows[j][2], 0.10) or not near(i, j):
-                    continue
-                gi = group_any(i)
-                if gi is not None and gi == group_any(j):
-                    parent[find(i)] = find(j)
+        for i, j in pairs(idx):
+            if find(i) == find(j) or not _close(rows[i][2], rows[j][2], 0.10) or not near(i, j):
+                continue
+            gi = group_any(i)
+            if gi is not None and gi == group_any(j):
+                parent[find(i)] = find(j)
 
     chains = {}
     for i in range(len(rows)):

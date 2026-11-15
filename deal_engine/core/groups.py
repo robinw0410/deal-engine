@@ -344,9 +344,11 @@ def market_group(title, price, groups, defect=False, accessory_regex=None, loc=N
 
 def _falls_through(title, g, groups):
     """The exclude of group `g` hits `title` only to pass it on: no earlier group takes the title by the
-    word rules, and some LATER group's match hits it (it takes the title, or its veto stops it there).
-    That is an ordering decision ("Original Nintendo Switch / OLED Joy-Con links" falls from "Joy-Con
-    einzeln" to "Switch OLED"), not a statement that the title is no `g`."""
+    word rules, and a LATER group really takes it (match_group over the later groups returns a group: its
+    match hits, its exclude/soft_exclude/veto do not). That is an ordering decision ("Original Nintendo
+    Switch / OLED Joy-Con links" falls from "Joy-Con einzeln" to "Switch OLED"), not a statement that the
+    title is no `g`. A later group that only matches (and excludes or vetoes the title itself) does not
+    count: then nothing takes the title and the exclude means "not `g`"."""
     gs = list(groups or [])
     pos = next((i for i, x in enumerate(gs) if x is g), None)
     if pos is None:
@@ -354,7 +356,7 @@ def _falls_through(title, g, groups):
     w = match_group(title, gs)
     if w is not None and next(i for i, x in enumerate(gs) if x is w) < pos:
         return False   # an earlier group takes the title ("Switch nur Tablet ohne Joy-Con")
-    return any(re.search(x["match"], title, re.I) for x in gs[pos + 1:])
+    return match_group(title, gs[pos + 1:]) is not None
 
 
 def from_classification(title, cls, groups):
@@ -365,15 +367,16 @@ def from_classification(title, cls, groups):
     exclude does, so that the config's "not this group" also binds the model ("Xbox 360 Controller" is
     no "Xbox Controller", "Switch 2 Pro Controller" no "Switch Pro Controller", "Switch nur Tablet ohne
     Joy-Con" no "Nintendo Switch").
-    One exception for exclude (not for veto): exclude also orders the groups. A title whose exclude hits
-    falls through to the later groups, and when one of them matches it (it takes the title, or its veto
-    stops it there), the model may overrule that fall-through, as before 0.2.17: "DualSense für PS5
-    Konsole" is excluded from DualSense (it names a console) and vetoed by PS5, the model's "DualSense"
-    is right; "Original Nintendo Switch / OLED Joy-Con links" falls from "Joy-Con einzeln" to "Switch
-    OLED", and rejecting the model's "Joy-Con einzeln" would compare a 20 EUR Joy-Con with the console
-    median. If no later group matches, or an earlier group takes the title by the word rules, the exclude
-    stands ("Xbox 360 Controller": no later group matches; "Switch nur Tablet ohne Joy-Con": the earlier
-    group "Switch nur Tablet"; "Nintendo Switch 2 Pro Controller": "Switch 2 Pro Controller").
+    One exception for exclude (not for veto): exclude also orders the groups. When the exclude only
+    passes the title on to a LATER group that really takes it by the word rules (and no earlier group
+    does), the model may overrule that fall-through: "Original Nintendo Switch / OLED Joy-Con links" falls
+    from "Joy-Con einzeln" to "Switch OLED", and rejecting the model's "Joy-Con einzeln" would compare a
+    20 EUR Joy-Con with the console median. If no later group takes the title (it only matches and excludes
+    or vetoes it itself), or an earlier group takes it, the exclude stands ("Xbox 360 Controller",
+    "Switch OLED nur Tablet", "Joy-Con 2 rechts"; "Switch nur Tablet ohne Joy-Con": the earlier group
+    "Switch nur Tablet"; "Nintendo Switch 2 Pro Controller": "Switch 2 Pro Controller"). Rules the model
+    may overrule in general ("DualSense für PS5 Konsole": "Konsole" is no reason by itself) belong in
+    soft_exclude.
     soft_exclude never makes a classification implausible: it is the word rules' "not by the title
     alone", which the model may overrule ("Xbox One S 2 Spiele", "Star Wars Limited Edition PS4").
     Otherwise (kind, group dict or None, qty) with kind device/bundle/accessory/part/other

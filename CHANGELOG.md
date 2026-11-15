@@ -13,12 +13,14 @@
   level of disappeared listings. New market settings `threshold_basis` (`resale` default, `median` =
   previous behaviour) and `threshold_min_sold`, validated at config load. New public
   `pipeline.threshold_ref(m, sold_prices, sc) -> (ref_unit, basis)`; `select()` takes `sold=`;
-  `collect()` loads the cleaned sold prices once per run (median if loading fails). Candidates carry
+  `collect()` loads the cleaned sold prices once per run (median if loading fails, if there is no
+  sold estimate, i.e. fewer than `insights.min_sold`, or if `insights.sold_clean` is false). Candidates carry
   `market_threshold_basis` and `market_threshold_ref`; a log line names the groups on each basis.
 - **LLM group respects `exclude`**: a classification naming a group whose `exclude` hits the title
   is now implausible (word rules decide), like `veto` before. Exception: when the exclude only passes
-  the title on to a later group that matches it, the model may still overrule that fall-through
-  ("DualSense für PS5 Konsole", "Switch / OLED Joy-Con links"). Fixes Xbox 360 controllers counted as
+  the title on to a later group that really takes it by the word rules (and no earlier group does), the
+  model may still overrule that fall-through ("Switch / OLED Joy-Con links"); a later group that only
+  matches and excludes or vetoes the title does not count. Fixes Xbox 360 controllers counted as
   Xbox Controller, Switch 2 Pro controllers as Switch Pro Controller and Switch tablets as Nintendo
   Switch, in the median as well as in the sale price from disappeared listings. New optional group
   key `soft_exclude` (regex, checked at load): like `exclude` for the word rules, but the model may
@@ -46,9 +48,11 @@
   the searches (`deals.market_search` first); values sent by the form take precedence, an unknown id
   still creates the deal. A listing that is no longer in any state still gives its market group from
   history.db (read-only). Without a listing id, it is derived from the link when exactly one listing
-  in the states has that URL. Editing a deal looks nothing up unless its listing id changes.
+  in the states has that URL. Editing a deal looks nothing up unless its listing id changes; then
+  market group, score and estimates come from the new listing unless the request sends them.
 - deals.db: new column `score` (added automatically on start; existing deals keep it empty), shown
-  in the deal list and the deal dialog. `listing_id` is validated (`<source>-<id>`), `score` must be
+  in the deal list and the deal dialog. `listing_id` is validated (`<adapter>-<source id>`, no
+  whitespace or "/", at most 200 characters after the adapter), `score` must be
   between 0 and 10. The "bought → deal list" link (`web.deal_link`) also passes the listing's score
   (numeric scores only).
 

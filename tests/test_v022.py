@@ -46,11 +46,11 @@ NETWORK = r"netzwerk|gigabit|\blan\b|poe|managed|tp-?link|netgear|cisco"
 
 GROUPS = [
     {"name": "DualSense Edge", "keyword": "dualsense edge", "match": r"dualsense\s*edge",
-     "exclude": f"{HAIR}|{THIRD_PARTY}|{NOT_SINGLE}", "min": 70, "max": 250},
+     "exclude": f"{HAIR}|{THIRD_PARTY}", "soft_exclude": NOT_SINGLE, "min": 70, "max": 250},
     {"name": "DualSense", "keyword": "dualsense", "match": r"dualsense|ps5[- ]controller",
-     "exclude": f"{HAIR}|edge|{THIRD_PARTY}|{NOT_SINGLE}", "min": 20, "max": 90},
+     "exclude": f"{HAIR}|edge|{THIRD_PARTY}", "soft_exclude": NOT_SINGLE, "min": 20, "max": 90},
     {"name": "Switch Pro Controller", "keyword": "switch pro controller", "match": r"pro[- ]controller",
-     "exclude": f"{THIRD_PARTY}|{NOT_SINGLE}", "min": 20, "max": 80},
+     "exclude": THIRD_PARTY, "soft_exclude": NOT_SINGLE, "min": 20, "max": 80},
     {"name": "PS5 Pro", "keyword": "ps5 pro", "match": r"(ps5|playstation 5)\s*pro", "veto": PS5_VETO,
      "min": 400, "max": 900},
     {"name": "PS5 Slim Digital", "keyword": "ps5 slim digital", "match": r"(ps5|playstation\s*5).*(slim.*digital|digital.*slim)",
@@ -82,7 +82,7 @@ MARKET = {"DualSense": {"median": 60, "p25": 55, "n": 12}, "PS5": {"median": 400
     ("DualSense funktionsfähig", "DualSense"),
     ("Ps5 kopfhörer", None),                          # headset: PS5 veto
     ("Switch 2 Controller originalverpackt", None),   # no Switch 2 group: Switch veto
-    ("DualSense für PS5 Konsole funktionsfähig", None),   # DualSense excluded ("Konsole"), PS5 vetoed
+    ("DualSense für PS5 Konsole funktionsfähig", None),   # DualSense soft-excluded ("Konsole"), PS5 vetoed
     ("PS5 mit 2 Controllern", "PS5"), ("PS5 Disc + DualSense", "PS5"),
     ("Nintendo Switch", "Nintendo Switch"), ("Switch mit 2 Controllern", "Nintendo Switch"),
     ("Switch ohne Controller nur Tablet", "Switch nur Tablet"), ("Switch OLED Controller", None),
@@ -469,7 +469,7 @@ def test_settings_flag_and_literal_tokens_are_rejected(tmp_path, monkeypatch, ar
 
 
 def test_model_group_vetoed_for_the_title_is_rejected():
-    """The model may overrule a fall-through exclude, but not the target group's veto: the shadow
+    """The model may overrule a soft_exclude (since 0.2.17; before: exclude), but not the target group's veto: the shadow
     run's "DualSense ... Konsole" title must never be priced as a PS5 because the model said so."""
     from deal_engine.core.groups import from_classification
     t = "DualSense für PS5 Konsole funktionsfähig"

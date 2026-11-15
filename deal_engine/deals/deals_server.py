@@ -54,7 +54,9 @@ DEAL_FIELDS = {
     "listing_id": str, "est_profit": float, "est_hours": float, "market_group": str, "score": float,
 }
 # listing id as in the state ("id") and history.db (listing.uid): <adapter>-<source_id>
-LISTING_ID = re.compile(r"[a-z0-9_]+-[A-Za-z0-9_-]{1,64}")
+# <adapter>-<source_id>: source ids are free text in the listing format, so only no whitespace or "/"
+# (the id is compared and used as an SQL parameter, never as a path)
+LISTING_ID = re.compile(r"[a-z0-9_-]+-[^\s/]{1,200}")
 SCORE_RANGE = (0, 10)   # core/score.py: 1-10 (evaluator scores without numbers are taken as they are)
 # deal field <- field of the listing in the state of a search (taken over when a deal is created)
 FROM_LISTING = {"market_group": "market_group", "score": "score", "est_profit": "expected_profit_eur",
@@ -777,7 +779,11 @@ class H(BaseHTTPRequestHandler):
                 b = self.body()
                 d = clean(b, DEAL_FIELDS, dict(row))
                 if d.get("listing_id") and d["listing_id"] != row["listing_id"]:
-                    fill_from_listing(d, from_link=False)   # listing changed: take over what is empty
+                    # listing changed: the old listing's values go, unless the form sends them along
+                    for k in FROM_LISTING:
+                        if k not in b:
+                            d[k] = None
+                    fill_from_listing(d, from_link=False)
                 save_deal(con, d)
                 if "parts" in b:
                     set_deal_parts(con, d["id"], b["parts"])

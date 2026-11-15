@@ -364,8 +364,8 @@ def threshold_ref(m, sold_prices, sc):
     m: the group's market entry {"median", "p25", "n", ...}; sold_prices: the cleaned prices of its
     disappeared listings (history.sold_for_search(...)[group]["p"]) or None; sc: the search.
 
-    basis "resale" (market.threshold_basis "resale", the default, and at least market.threshold_min_sold
-    sold prices): the unit resale value as insights computes it, min(resale_from_ask, sold_estimate) with
+    basis "resale" (market.threshold_basis "resale", the default, at least market.threshold_min_sold sold
+    prices and a sold estimate, i.e. also at least insights.min_sold): the unit resale value as insights computes it, min(resale_from_ask, sold_estimate) with
     sold_factor/min_sold from the search's insights settings, divided by sale_factor again, so that
     flip_ratio/defect_price_ratio keep their meaning ("x times the market price"). Never above the
     median: the threshold is never looser than on the median basis.
@@ -380,8 +380,9 @@ def threshold_ref(m, sold_prices, sc):
     ins = insights.settings(sc)   # the same source as insights.apply
     ask = resale_from_ask(m, sf)
     est = sold_estimate(list(sold_prices), ask, ins["min_sold"], ins["sold_factor"])
-    unit = ask if est is None else min(ask, est)
-    return min(med, unit / sf), "resale"
+    if est is None:   # threshold_min_sold below insights.min_sold: no sold estimate, stay on the median
+        return med, "median"
+    return min(med, min(ask, est) / sf), "resale"
 
 
 def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPPING_COST, adapter_name=None,
@@ -394,7 +395,7 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
 
     classified: {source_id: (group name, qty, kind)} from the LLM classification; if plausible
     (groups.from_classification: a named group's match regex hits the title, its veto and
-    exclude do not, except an exclude that only passes the title on to a later group) it replaces the word
+    exclude do not, except an exclude that only passes the title on to a later group that takes it) it replaces the word
     rules for that listing: device/bundle -> that group (qty for controller-like groups),
     accessory -> skipped, other -> no group (no market comparison). Implausible: word rules.
     Spare parts without the device are dropped according to sc["parts"] (groups.drop_part: kind
@@ -686,7 +687,9 @@ def collect(cfg, sc, adapter, log=print, classify_first=False, classify_budget=N
         # cleaned disappeared listings for the price threshold (resale basis), once per collect;
         # unreadable -> {} -> median basis
         sold = None
-        if market and mc.get("groups") and threshold_basis(sc) == "resale":
+        # only cleaned sold prices: with insights.sold_clean false the statistic is the old one (bundles,
+        # reposts), which must not move the threshold
+        if market and mc.get("groups") and threshold_basis(sc) == "resale" and insights.settings(sc).get("sold_clean"):
             try:
                 sold = history.sold_for_search(P["history"], sc, log=log)
             except Exception as e:

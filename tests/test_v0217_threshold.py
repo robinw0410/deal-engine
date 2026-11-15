@@ -64,19 +64,17 @@ def test_threshold_ref_min_sold_setting():
     sc = sc_of({"threshold_min_sold": 12})
     assert pipeline.threshold_ref(MARKET["Console"], [150] * 10, sc) == (200, "median")
     sc = sc_of({"threshold_min_sold": 3})
-    # 3 sold prices: enough for the threshold, but below insights.min_sold (8) -> no sold estimate,
-    # the asking-price resale value alone: 170 / 0.85 = 200
-    ref, basis = pipeline.threshold_ref(MARKET["Console"], [150] * 3, sc)
-    assert basis == "resale" and ref == pytest.approx(200)
+    # 3 sold prices: enough for threshold_min_sold, but below insights.min_sold (8) -> no sold estimate,
+    # so no resale basis (review 0.2.17): the median, as without sold data
+    assert pipeline.threshold_ref(MARKET["Console"], [150] * 3, sc) == (200, "median")
 
 
 def test_threshold_ref_uses_insights_settings():
     # sold_factor 0.8 from the search's insights settings: 150 x 0.8 = 120 -> 120 / 0.85
     ref, _ = pipeline.threshold_ref(MARKET["Console"], [150] * 10, sc_of(insights={"sold_factor": 0.8}))
     assert ref == pytest.approx(120 / 0.85)
-    # insights.min_sold above the sold count: asking-price resale value only (170 / 0.85 = 200)
-    ref, basis = pipeline.threshold_ref(MARKET["Console"], [150] * 10, sc_of(insights={"min_sold": 20}))
-    assert basis == "resale" and ref == pytest.approx(200)
+    # insights.min_sold above the sold count: no sold estimate -> median basis
+    assert pipeline.threshold_ref(MARKET["Console"], [150] * 10, sc_of(insights={"min_sold": 20})) == (200, "median")
 
 
 def test_threshold_ref_never_above_median():
@@ -185,12 +183,13 @@ def test_config_validation(tmp_path):
 
 # --- collect(): loading once, failures fall back to the median ------------------------------------
 
-def _collect(tmp_path, monkeypatch, sold_fn, market=None):
+def _collect(tmp_path, monkeypatch, sold_fn, market=None, insights=None):
     rows = [listing(1, "Konsole 1TB", 130), listing(2, "Konsole 500GB", 100)]
     (tmp_path / "l.json").write_text(json.dumps(rows))
     cfg = write_cfg(tmp_path, {"s": search_cfg(locale="de", json_file={"path": "l.json"},
                                                filters={"signal_regex": "defekt"},
-                                               market={"groups": GROUPS, **(market or {})})})
+                                               market={"groups": GROUPS, **(market or {})},
+                                               **({"insights": insights} if insights else {}))})
     sc = config_mod.search(cfg, "s")
     monkeypatch.setattr(pipeline, "update_market", lambda *a, **k: MARKET)
     monkeypatch.setattr(history, "sold_for_search", sold_fn, raising=False)
@@ -233,3 +232,10 @@ def test_no_threshold_log_line_without_sold_data():
     sc = {"_name": "t", "filters": {}, "market": {"groups": [{"name": "G", "match": "g", "min": 1, "max": 999}]}}
     _p.select({}, set(), {}, {"G": {"median": 100, "p25": 90, "n": 10}}, sc, log=lines.append)
     assert not any("market threshold" in s for s in lines)
+
+
+def test_collect_does_not_load_sold_prices_when_sold_clean_is_off(tmp_path, monkeypatch):
+    """insights.sold_clean false gives the old statistic (bundles, reposts): it must not move the threshold."""
+    calls = []
+    c, _ = _collect(tmp_path, monkeypatch, lambda *a, **k: calls.append(1) or SOLD, insights={"sold_clean": False})
+    assert c["candidates"] == 2 and not calls   # median threshold 140, nothing loaded
