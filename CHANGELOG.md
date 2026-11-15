@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.2.18 – 2026-11-15
+
+### Changed
+
+- **Market median from a rolling pool**: `update_market()` adds to the current hits of the group
+  queries the listings of the search stored in `history.db` that were seen in the last
+  `market.pool_days` days (default 30; 0 = hits only, as before), with a price and without the stored
+  defect flag, each listing once (by uid, the current hit wins). Same selection as `sample_report`
+  (new public `market.history_items(con, sc, since)`, also used by `sample_report`), read-only
+  (`history.pool_for_search`, never raises; an unreadable database means hits only). The hits of one
+  query alone gave medians from 5 to 14 listings (Nintendo Switch 210 € from 5, 3DS 65 € from 5).
+  New market file keys per entry: `since`, `days`, `listings` [current, stored]; the log line names
+  them. New `pipeline.add_pool(by_group, db, sc)`, `market.pool_since(mc)`; `market.refresh` takes `pool=`.
+- **`sample_report` / pool only from `market.source`**: when a search sets `market.source`, the stored
+  listings of other adapters (eBay, also from abroad) no longer count in `sample_report` either; the
+  market queries only run there, as the cleaned sold prices already did. Searches without
+  `market.source` are unchanged.
+- **Thin median caps the threshold no longer**: with a median of fewer than `market.median_min_n`
+  (default 10) listings and enough cleaned sold prices, `threshold_ref` returns basis `sold`: the
+  resale value from the sold prices alone (median x `insights.sold_factor`, not capped by the asking
+  prices), so the threshold is `flip_ratio` x that value and may be above the one on the median
+  (3DS: median 65 € from 5, sold 130 € from 11: threshold 41 € -> 85 €). With a reliable median
+  nothing changes (never looser than on the median). The run log names the groups on the sold basis.
+
 ## 0.2.17 – 2026-11-15
 
 ### Changed

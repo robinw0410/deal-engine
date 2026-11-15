@@ -233,13 +233,15 @@ def test_update_market_counts_word_rule_bundles_after_they_were_classified(tmp_p
     new = pipeline.update_market(cfg, sc, adapter, P, quiet)
     # 230 - 1 x 25 - 30 = 175, 170 - 15 = 155, 165 - 10 = 155
     assert new["PS4"] == {"median": 155, "p25": 150, "n": 8, "sample": "adjusted_bundles", "n_device": 5,
-                          "n_bundle": 3, "date": str(TODAY)}
+                          "n_bundle": 3, "date": str(TODAY),
+                          "since": str(TODAY - timedelta(days=30)), "days": 30, "listings": [8, 0]}   # 0.2.18 pool
     assert {uid: grp for uid, grp in rows(P["history"]) if uid[2] == "b"} == {"t-b1": None, "t-b2": None, "t-b3": None}
     # with sample all the same queries track and count what they always did
     cfg2 = {"_data": tmp_path / "all", "_base": tmp_path}
     P2 = config_mod.paths(cfg2, "s", "t")
     old = pipeline.update_market(cfg2, search({}), adapter, P2, quiet)
-    assert old["PS4"] == {"median": 150, "p25": 150, "n": 5} and len(rows(P2["history"])) == 13
+    assert {k: old["PS4"][k] for k in ("median", "p25", "n")} == {"median": 150, "p25": 150, "n": 5}
+    assert len(rows(P2["history"])) == 13
 
 
 def test_sample_report_sees_noted_bundles(tmp_path):

@@ -313,10 +313,18 @@ sit above what they actually go for, because cheap listings disappear first and 
 online; this keeps the threshold close to real sale prices without changing the meaning of the
 ratios. `threshold_basis: median` restores the behaviour before 0.2.17.
 
+The cap at the median only holds if the median itself is reliable, i.e. counts at least
+`market.median_min_n` (default 10) listings (since 0.2.18). Below that, with enough sold prices, the
+basis is `sold`: the reference is the resale value from the cleaned sold prices alone (their median x
+`insights.sold_factor`, not capped by the asking prices), so the threshold is `flip_ratio` x that resale
+value and may be above the one on the median. Example: median 65 € from 5 listings, sold median 130 €
+from 11: before 0.2.18 the threshold was about 41 €, now 0.7 x 121 € = 85 €.
+
 ```yaml
 market:
   threshold_basis: resale   # or median
   threshold_min_sold: 8     # resale basis only with at least this many cleaned sold prices
+  median_min_n: 10          # a median from fewer listings caps nothing: basis "sold"
 ```
 
 `pipeline.threshold_ref(m, sold_prices, sc)` returns `(reference, basis)`; candidates carry
@@ -356,6 +364,18 @@ median, 25th percentile and sample size of the working single units in
 `market_exclude` words (or `market.exclude_regex`) and prices outside the group's `min`/`max` never
 count; fresh listings are preferred (`fresh_days`, `min_fresh`), then private sellers
 (`min_private`), and below `min_n` listings there is no new value (the previous one is kept).
+
+**Rolling pool** (since 0.2.18): the listings are the current hits of the group queries plus the
+listings of the search stored in `history.db` that were seen in the last `pool_days` days (default 30;
+needs `track`), with a price, without the stored defect flag and from `market.source` if set; each
+listing counts once (a current
+hit replaces its stored copy). It is the same selection as `market.sample_report` /
+`scripts/market_sample.py` (`market.history_items`), and the stored classification of a listing
+counts as for the current hits. The hits of one query alone often gave a median from 5 to 14
+listings. Each new entry of the market file names the period and the listings looked at:
+`"since"` (first day), `"days"`, `"date"` (last day) and `"listings": [current, stored]` (before the
+selection; `n` counts the ones used). `pool_days: 0` (or no readable `history.db`) restores the
+behaviour before 0.2.18.
 
 `market.sample` decides which of the remaining listings count:
 

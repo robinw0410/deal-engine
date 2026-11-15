@@ -499,7 +499,9 @@ def test_update_market_attaches_the_stored_classification(tmp_path, monkeypatch)
     cls = {it["source_id"]: it["_cls"] for it in seen["Console A"]}
     assert cls["d0"] == ("Console A", 1, "device") and cls["b0"] == ("Console A", 1, "bundle") and cls["u1"] is None
     assert new["Console A"] == {"median": 150, "p25": 150, "n": 8, "sample": "device_only", "n_device": 8,
-                                "n_bundle": 0, "date": str(TODAY)}
+                                "n_bundle": 0, "date": str(TODAY),
+                                # 0.2.18: rolling pool (the current hits are tracked, so none is added twice)
+                                "since": str(TODAY - timedelta(days=30)), "days": 30, "listings": [15, 0]}
     assert json.loads(P["market"].read_text())["Console A"] == new["Console A"]
     assert any("market sample device_only: 14 of 15 listings classified" in s for s in logs)
     # a changed title invalidates the stored classification
@@ -516,7 +518,10 @@ def test_update_market_sample_all_reads_no_classification(tmp_path, monkeypatch)
     classify_all(P["history"], adapter.by_keyword["console a"])
     monkeypatch.setattr(history, "attach_classification", lambda *a, **kw: pytest.fail("not with sample all"))
     new = pipeline.update_market(cfg, sc, adapter, P, lambda s: None)
-    assert new["Console A"] == {"median": 167, "p25": 150, "n": 15}   # devices, bundles and the unclassified one
+    assert new["Console A"] == {"median": 167, "p25": 150, "n": 15,    # devices, bundles and the unclassified one
+                                # 0.2.18: rolling pool period (dated also with sample all)
+                                "date": str(TODAY), "since": str(TODAY - timedelta(days=30)), "days": 30,
+                                "listings": [15, 0]}
 
 
 @pytest.mark.parametrize("db", ["missing", "broken", "empty", "no_table"])

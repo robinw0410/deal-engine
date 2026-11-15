@@ -150,9 +150,34 @@ def update_market(cfg, sc, adapter, P, log=print):
         n_cls = history.attach_classification(P["history"], [it for its in by_group.values() for it in its], log)
         log(f"  market sample {market_sample_mode(mc)}: {n_cls} of {sum(map(len, by_group.values()))} "
             f"listings classified")
-    new = market_refresh(market, by_group, groups, sc.get("filters") or {}, mc, log, loc)
+    by_group, pool = add_pool(by_group, P["history"], sc, log)
+    new = market_refresh(market, by_group, groups, sc.get("filters") or {}, mc, log, loc, pool=pool)
     save_json(P["market"], new)
     return new
+
+
+def add_pool(by_group, db, sc, log=print, today=None):
+    """(items by group, pool info) for the market median: the current hits of every group plus the stored
+    listings of the last market.pool_days days (history.pool_for_search, the same selection as
+    scripts/market_sample.py), each listing once (a current hit replaces its stored copy, by uid).
+    Pool info for market.refresh, or None if nothing was added (pool_days 0, no or unreadable history.db):
+    then the items are the current hits alone, as up to 0.2.17."""
+    since, stored = history.pool_for_search(db, sc, log, today)
+    if since is None:
+        return by_group, None
+    cur = set()
+    for its in by_group.values():
+        for it in its:
+            if it.get("source") is not None and it.get("source_id") is not None:
+                cur.add(history.uid(it))
+    out, listings = {}, {}
+    for name in dict.fromkeys([*by_group, *stored]):
+        mine = list(by_group.get(name) or [])
+        add = [it for it in stored.get(name) or [] if it["uid"] not in cur]
+        out[name] = mine + add
+        listings[name] = (len(mine), len(add))
+    days = int(market_settings(sc.get("market"))["pool_days"])
+    return out, {"since": since, "days": days, "listings": listings}
 
 
 _platform = platform_of   # kept for callers of the old name
@@ -368,7 +393,11 @@ def threshold_ref(m, sold_prices, sc):
     prices and a sold estimate, i.e. also at least insights.min_sold): the unit resale value as insights computes it, min(resale_from_ask, sold_estimate) with
     sold_factor/min_sold from the search's insights settings, divided by sale_factor again, so that
     flip_ratio/defect_price_ratio keep their meaning ("x times the market price"). Never above the
-    median: the threshold is never looser than on the median basis.
+    median: the threshold is never looser than on the median basis. Only with a median of at least
+    market.median_min_n listings (m["n"]); a thinner one caps nothing:
+    basis "sold": the resale value from the sold prices alone (median x sold_factor, not capped by the
+    asking prices), as the unit reference: the threshold is flip_ratio x the resale value and may be above
+    the one on the median.
     Otherwise basis "median" and ref_unit == m["median"] (the behaviour up to 0.2.16)."""
     s = market_settings((sc or {}).get("market"))
     med = m["median"]
@@ -382,7 +411,12 @@ def threshold_ref(m, sold_prices, sc):
     est = sold_estimate(list(sold_prices), ask, ins["min_sold"], ins["sold_factor"])
     if est is None:   # threshold_min_sold below insights.min_sold: no sold estimate, stay on the median
         return med, "median"
-    return min(med, min(ask, est) / sf), "resale"
+    if (m.get("n") or 0) >= int(s["median_min_n"]):
+        return min(med, min(ask, est) / sf), "resale"
+    # thin median (fewer than median_min_n listings): it caps nothing, the cleaned sold prices decide alone,
+    # also above the median; the reference is the resale value itself (sold median x sold_factor), so the
+    # threshold is flip_ratio x the resale value (stricter than the ~flip_ratio / sale_factor of "resale")
+    return sold_estimate(list(sold_prices), None, ins["min_sold"], ins["sold_factor"]), "sold"
 
 
 def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPPING_COST, adapter_name=None,
@@ -427,9 +461,11 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
     in_market = [g["name"] for g in groups if g.get("name") in market and (market[g["name"]] or {}).get("median")]
     if in_market and sold_given:
         on_resale = [n for n in dict.fromkeys(in_market) if ref_of(n)[1] == "resale"]
+        on_sold = [n for n in dict.fromkeys(in_market) if ref_of(n)[1] == "sold"]
         log(f"market threshold: {len(on_resale)} group(s) on the resale basis"
             f"{' (' + ', '.join(on_resale[:8]) + ')' if on_resale else ''}, "
-            f"{len(dict.fromkeys(in_market)) - len(on_resale)} on the median")
+            + (f"{len(on_sold)} on the sold prices alone (thin median: {', '.join(on_sold[:8])}), " if on_sold else "")
+            + f"{len(dict.fromkeys(in_market)) - len(on_resale) - len(on_sold)} on the median")
     for sid, it in items.items():
         if not considered(sid, it, known, seen, flt):
             if flt.get("hooks") and sid not in known and it["status"] == "active":

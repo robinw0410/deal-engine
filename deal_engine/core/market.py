@@ -53,13 +53,15 @@ DEFAULTS = {
     "games_default": 2,         # "mit Spielen" without a count
     "threshold_basis": "resale",  # candidate threshold on the resale value (with enough sold data) or "median"
     "threshold_min_sold": 8,    # resale basis only with at least this many cleaned sold prices of the group
+    "pool_days": 30,            # median from the current hits + the listings of the last N days in history.db (0: hits only)
+    "median_min_n": 10,         # a median from fewer listings is thin: the threshold may follow the sold prices alone
 }
 SAMPLES = ("all", "device_only")
 
 
 def settings(mc):
     s = {**DEFAULTS, **(mc or {})}
-    for k in ("device_min_n", "games_default"):   # null in a search built without config.search: the default
+    for k in ("device_min_n", "games_default", "pool_days", "median_min_n"):   # null: the default
         if s[k] is None:
             s[k] = DEFAULTS[k]
     return s
@@ -76,7 +78,8 @@ def sample_mode(mc):
 def check_settings(mc):
     """ValueError with a readable message if market.sample is unknown or one of the numbers of the sample
     settings cannot work: device_min_n and games_default integers >= 0, game_value and game_value_max
-    numbers >= 0 (game_value_max: null = no maximum), threshold_basis "resale" or "median",
+    numbers >= 0 (game_value_max: null = no maximum), pool_days and median_min_n integers >= 0,
+    threshold_basis "resale" or "median",
     threshold_min_sold an integer >= 1. Settings that are not given are not checked."""
     mc = mc or {}
     sample_mode(mc)
@@ -88,7 +91,7 @@ def check_settings(mc):
         if isinstance(v, bool) or not isinstance(v, int) or v < 1:
             raise ValueError(f"market.threshold_min_sold must be an integer >= 1, not {v!r}")
     for k, whole in (("device_min_n", True), ("games_default", True), ("game_value", False),
-                     ("game_value_max", False)):
+                     ("game_value_max", False), ("pool_days", True), ("median_min_n", True)):
         if k not in mc or (mc[k] is None and k == "game_value_max"):
             continue
         v = mc[k]
@@ -335,8 +338,13 @@ def _estimate_groups(old, items_by_group, groups, flt, mc, loc=None, today=None)
     return {n: out.get(n) for n in names}, samples
 
 
-def refresh(old, items_by_group, groups, flt, mc, log=print, loc=None):
+def refresh(old, items_by_group, groups, flt, mc, log=print, loc=None, pool=None):
     """New market dict from {group name: [items]}; keeps the old entry where data is too thin.
+
+    pool: {"since": YYYY-MM-DD, "days": n, "listings": {group: (from the current hits, from history.db)}}
+    when the items include the rolling pool (pipeline.update_market, market.pool_days): every newly
+    computed entry then gets "since" and "days" (the period the median covers, up to "date") and
+    "listings" [current, history], the listings looked at before the selection (n counts the ones used).
 
     With market.sample other than "all" every newly computed entry gets "date" (today, YYYY-MM-DD). A
     kept entry stays exactly as it was written, with its old date, or without "date"/"sample" if it
@@ -351,8 +359,13 @@ def refresh(old, items_by_group, groups, flt, mc, log=print, loc=None):
         m = est.get(name)
         thin = f" ({_thin(samples[name])})" if name in samples else ""
         if m:
-            new[name] = {**m, "date": new["_updated"]} if dated else m
-            log(f"  market {name}: median {m['median']} (n={m['n']})"
+            new[name] = {**m, "date": new["_updated"]} if dated or pool else m
+            per = ""
+            if pool:
+                cur, hist = (pool.get("listings") or {}).get(name, (0, 0))
+                new[name].update(since=pool["since"], days=pool["days"], listings=[cur, hist])
+                per = f", {pool['days']} days since {pool['since']}: {cur} current + {hist} stored listings"
+            log(f"  market {name}: median {m['median']} (n={m['n']}{per})"
                 + (f", {m['sample']}: {m['n_device']} devices + {m['n_bundle']} adjusted bundles"
                    if "sample" in m else ""))
         elif name in old:
@@ -397,13 +410,50 @@ def _median_n(prices):
     return {"median": round(median(prices)) if prices else None, "n": len(prices)}
 
 
+def history_items(con, sc, since):
+    """{group name: [items]} of the listings of search `sc` in history.db seen since `since` (YYYY-MM-DD,
+    listing.last_seen), with a price and without the stored defect flag, only from market.source if the
+    search sets one (the market queries run there; since 0.2.18, as the cleaned sold prices); the same
+    selection for sample_report (scripts/market_sample.py) and the rolling pool of the market median
+    (pool_days).
+
+    con: sqlite3 connection (only SELECTs, read-only is enough). Every item: "uid", "title", "price",
+    "private", "_published" and "_cls" (the stored classification, valid only for the same title, else
+    None). A listing goes once into the list of every group it can count for: the group of the word
+    rules and/or the one its plausible classification names (not to every group, which costs groups^2)."""
+    mc = sc.get("market") or {}
+    groups, source = mc.get("groups") or [], mc.get("source")
+    by = {g["name"]: [] for g in groups}
+    for uid, title, price, private, published, defect, c_uid, c_title, grp, qty, kind in con.execute(
+            """SELECT l.uid, l.title, l.price, l.private, l.published, l.defect, c.uid, c.title, c.grp, c.qty, c.kind
+               FROM listing l LEFT JOIN classify c ON c.uid = l.uid
+               WHERE l.search=? AND l.last_seen>=? AND l.price IS NOT NULL AND (? IS NULL OR l.source=?)""",
+            (sc["_name"], since, source, source)):
+        if defect:
+            continue
+        title = (title or "")[:TITLE_LEN]
+        it = {"uid": uid, "title": title, "price": price, "private": bool(private), "_published": published,
+              "_cls": (grp, qty or 1, kind) if c_uid is not None and c_title == title else None}
+        word = match_group(title, groups)
+        c = from_classification(title, it["_cls"], groups)
+        for name in dict.fromkeys(g["name"] for g in (word, c[1] if c else None) if g):
+            by[name].append(it)
+    return by
+
+
+def pool_since(mc, today=None):
+    """First day (YYYY-MM-DD) of the rolling pool of the market median, or None with pool_days 0."""
+    days = int(settings(mc)["pool_days"])
+    return str(_day(today) - timedelta(days=days)) if days > 0 else None
+
+
 def sample_report(con, sc, days=30, loc=None, today=None, market=None):
     """Before/after comparison of market.sample for one search, from the listings stored in history.db.
 
     con: sqlite3 connection to history.db. Only SELECTs: nothing is written and no schema is created,
     so a connection opened read-only ("file:...?mode=ro", uri=True) is enough. sc: the search (from
     config.search). Listings of the search seen in the last `days` days (listing.last_seen) with a
-    price and without the stored defect flag are used; the classification comes from table classify
+    price and without the stored defect flag, from market.source if set (history_items), are used; the classification comes from table classify
     and is valid only for the same title (as in history.classification). loc: locale (default: the
     search's). today: reference day (default: today). market: current market file as a fallback for
     extras groups without enough data of their own (optional).
@@ -423,23 +473,7 @@ def sample_report(con, sc, days=30, loc=None, today=None, market=None):
     groups, flt = mc.get("groups") or [], sc.get("filters") or {}
     loc = loc if isinstance(loc, locale_mod.Locale) else locale_mod.get(loc or sc.get("_locale") or "en")
     day = _day(today)
-    since = str(day - timedelta(days=int(days)))
-    # every listing goes once into the list of the group it can count for: the group of the word rules
-    # and/or the one its classification names (not all listings to every group, which costs groups^2)
-    by = {g["name"]: [] for g in groups}
-    for title, price, private, published, defect, c_uid, c_title, grp, qty, kind in con.execute(
-            """SELECT l.title, l.price, l.private, l.published, l.defect, c.uid, c.title, c.grp, c.qty, c.kind
-               FROM listing l LEFT JOIN classify c ON c.uid = l.uid
-               WHERE l.search=? AND l.last_seen>=? AND l.price IS NOT NULL""", (sc["_name"], since)):
-        if defect:
-            continue
-        title = (title or "")[:TITLE_LEN]
-        it = {"title": title, "price": price, "private": bool(private), "_published": published,
-              "_cls": (grp, qty or 1, kind) if c_uid is not None and c_title == title else None}
-        word = match_group(title, groups)
-        c = from_classification(title, it["_cls"], groups)
-        for name in dict.fromkeys(g["name"] for g in (word, c[1] if c else None) if g):
-            by[name].append(it)
+    by = history_items(con, sc, str(day - timedelta(days=int(days))))
     mc_after = mc if sample_mode(mc) != "all" else {**mc, "sample": "device_only"}
     before = estimate_groups({}, by, groups, flt, {**mc, "sample": "all"}, loc, day)
     after, samples = _estimate_groups(market or {}, by, groups, flt, mc_after, loc, day)

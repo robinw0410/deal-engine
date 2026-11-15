@@ -347,6 +347,26 @@ def sold_for_search(db, sc, window_days=None, clean=True, log=print):
         return {}
 
 
+def pool_for_search(db, sc, log=print, today=None):
+    """(since, {group: [items]}): the stored listings of search `sc` for the rolling pool of the market
+    median (market.pool_days, market.history_items), from history.db opened read-only. (None, {}) with
+    pool_days 0 or without a database; never raises (an unreadable database: (None, {}) and a log line,
+    the median then comes from the current hits alone)."""
+    from . import market
+    try:
+        since = market.pool_since(sc.get("market"), today)
+        if since is None or not Path(db).exists():
+            return None, {}
+        con = connect_ro(db)
+        try:
+            return since, market.history_items(con, sc, since)
+        finally:
+            con.close()
+    except Exception as e:   # like tracking: never break a run
+        log(f"  stored listings for the market median not readable, current hits only: {type(e).__name__}: {e}")
+        return None, {}
+
+
 _COUNTRY = re.compile(r"([A-Z]{2})(?:\s|$)")
 
 
