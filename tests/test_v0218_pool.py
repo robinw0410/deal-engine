@@ -164,10 +164,13 @@ def test_thin_median_follows_the_sold_prices():
     # 3DS from the report of 15.11.: median 65 (n=5), cleaned sold 130 (n=11)
     m = {"median": 65, "p25": 55, "n": 5}
     ref, basis = threshold_ref(m, [130] * 11, SC)
-    assert basis == "sold" and ref == round(130 * 0.93)                     # resale value 121
-    assert ref * 0.7 == pytest.approx(84.7)                                 # threshold 0.7 x resale value (was 41)
+    # same calculation as "resale" without the asking caps: resale value 121 / sale_factor 0.85
+    assert basis == "sold" and ref == pytest.approx(121 / 0.85)
+    assert ref * 0.7 == pytest.approx(99.6, abs=0.1)                         # threshold ~100 € (was 41)
+    assert pipeline.threshold_cap([130] * 11, SC) == pytest.approx(110.5)   # cap 0.85 x 130 does not bind
     # thin and lower sold prices: below the median as well
-    assert threshold_ref({"median": 300, "p25": 280, "n": 4}, [200] * 9, SC) == (186, "sold")
+    ref, basis = threshold_ref({"median": 300, "p25": 280, "n": 4}, [200] * 9, SC)
+    assert basis == "sold" and ref == pytest.approx(186 / 0.85)
 
 
 def test_reliable_median_still_caps():
@@ -194,9 +197,10 @@ def test_select_logs_the_sold_basis():
     cands, _ = pipeline.select({"1": it}, set(), {}, {"Console A": {"median": 65, "p25": 55, "n": 5}},
                                {**SC, "filters": {"signal_regex": "defekt"}}, logs.append,
                                sold={"Console A": {"p": [130] * 11, "d": [3] * 11}})
-    assert len(cands) == 1                                                   # 80 <= 0.7 x 121
-    assert cands[0]["market_threshold_basis"] == "sold" and cands[0]["market_threshold_ref"] == 121
-    assert cands[0]["market_resale_estimate"] == 121
+    assert len(cands) == 1                                                   # 80 <= 0.7 x 142.4
+    assert cands[0]["market_threshold_basis"] == "sold" and cands[0]["market_threshold_ref"] == 142
+    assert cands[0]["market_resale_estimate"] == 121                         # resale value, not the reference
+    assert "market_threshold_capped" not in cands[0]
     assert any("1 on the sold prices alone (thin median: Console A)" in s for s in logs)
 
 
@@ -257,3 +261,42 @@ def test_thin_median_resale_estimate_follows_the_sold_prices(tmp_path):
         P["state"].write_text(json.dumps({"listings": [{"id": "t-1", "title": "Console A", "price": 80}]}))
         insights.apply({}, {**sc, "market": {"groups": [A]}, "track": True}, P, log=lambda *a: None)
         assert json.loads(P["state"].read_text())["listings"][0]["market_resale_estimate"] == want
+
+
+# ------------------------------------------------------------------ cap at 0.85 x the cleaned sold median
+
+def test_threshold_cap_settings():
+    assert pipeline.threshold_cap([20] * 4, SC) is None                     # fewer than 5 sold prices
+    assert pipeline.threshold_cap([20] * 5, SC) == pytest.approx(17)
+    assert pipeline.threshold_cap([20] * 5, {**SC, "market": {"groups": [A], "threshold_max_sold_ratio": 0.7}}) == 14
+    assert pipeline.threshold_cap([20] * 5, {**SC, "market": {"groups": [A], "threshold_max_sold_ratio": None}}) is None
+    assert pipeline.threshold_cap([20] * 3, {**SC, "market": {"groups": [A], "threshold_cap_min_sold": 3}}) == 17
+    assert pipeline.unit_ref(34, 0.7, 17) == pytest.approx(17 / 0.7) and pipeline.unit_ref(20, 0.7, 17) == 20
+    assert pipeline.unit_ref(34, 0.7, None) == 34
+
+
+@pytest.mark.parametrize("k, v", [("threshold_max_sold_ratio", -0.1), ("threshold_max_sold_ratio", "x"),
+                                  ("threshold_cap_min_sold", 2.5)])
+def test_cap_settings_are_checked(k, v):
+    with pytest.raises(ValueError, match=k):
+        check_settings({k: v})
+    check_settings({"threshold_max_sold_ratio": None, "threshold_cap_min_sold": 0})
+
+
+def test_cap_also_on_the_median_basis():
+    """8BitDo from the comparison of 15.11.: median 34 (n=18), 6 sold at 20: threshold 23.8 = 119 % of the
+    sold median -> at most 0.85 x 20 = 17; with extras and quantity the unit reference is capped."""
+    from deal_engine.core.listing import normalize
+    sc = {**SC, "filters": {"signal_regex": "defekt"}}
+    mk = {"Console A": {"median": 34, "p25": 30, "n": 18}}
+    sold = {"Console A": {"p": [20] * 6, "d": [3] * 6}}
+
+    def sel(price, title="Console A", s=sold):
+        it = normalize({"source_id": "1", "url": "https://example.org/1", "title": title, "price": price,
+                        "published": str(TODAY), "shipping_possible": True, "shipping_cost_eur": 0}, "test")
+        c, _ = pipeline.select({"1": it}, set(), {}, mk, sc, lambda x: None, sold=s)
+        return c[0] if c else None
+    assert sel(23, s=None)["market_threshold_basis"] == "median"             # without sold prices: 0.7 x 34
+    assert sel(23) is None and sel(18) is None                               # above 17
+    c = sel(17)
+    assert c["market_threshold_basis"] == "median" and c["market_threshold_capped"] == 17

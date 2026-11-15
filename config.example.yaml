@@ -85,6 +85,8 @@ searches:
       threshold_min_sold: 8            # resale basis only with at least this many cleaned sold prices per group
       pool_days: 30                    # median from the current hits + stored listings of the last 30 days (0: hits only)
       median_min_n: 10                 # a median from fewer listings is thin: the threshold follows the sold prices
+      threshold_max_sold_ratio: 0.85   # unit threshold never above 0.85 x the cleaned sold median (null: no cap)
+      threshold_cap_min_sold: 5        # ... once the group has at least 5 cleaned sold prices
       # sample: device_only            # median only from listings the LLM classification calls a single device
       #                                # (default: all = word rules; needs track, classify and the LLM evaluator)
       # device_min_n: 8                # device_only: with fewer devices, bundles are added at price minus extras

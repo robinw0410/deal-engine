@@ -55,13 +55,15 @@ DEFAULTS = {
     "threshold_min_sold": 8,    # resale basis only with at least this many cleaned sold prices of the group
     "pool_days": 30,            # median from the current hits + the listings of the last N days in history.db (0: hits only)
     "median_min_n": 10,         # a median from fewer listings is thin: the threshold may follow the sold prices alone
+    "threshold_max_sold_ratio": 0.85,  # unit threshold never above this x the cleaned sold median (null: no cap)
+    "threshold_cap_min_sold": 5,       # ... once the group has at least this many cleaned sold prices
 }
 SAMPLES = ("all", "device_only")
 
 
 def settings(mc):
     s = {**DEFAULTS, **(mc or {})}
-    for k in ("device_min_n", "games_default", "pool_days", "median_min_n"):   # null: the default
+    for k in ("device_min_n", "games_default", "pool_days", "median_min_n", "threshold_cap_min_sold"):   # null: default
         if s[k] is None:
             s[k] = DEFAULTS[k]
     return s
@@ -78,7 +80,8 @@ def sample_mode(mc):
 def check_settings(mc):
     """ValueError with a readable message if market.sample is unknown or one of the numbers of the sample
     settings cannot work: device_min_n and games_default integers >= 0, game_value and game_value_max
-    numbers >= 0 (game_value_max: null = no maximum), pool_days and median_min_n integers >= 0,
+    numbers >= 0 (game_value_max: null = no maximum), pool_days, median_min_n and threshold_cap_min_sold
+    integers >= 0, threshold_max_sold_ratio a number >= 0 or null,
     threshold_basis "resale" or "median",
     threshold_min_sold an integer >= 1. Settings that are not given are not checked."""
     mc = mc or {}
@@ -91,14 +94,16 @@ def check_settings(mc):
         if isinstance(v, bool) or not isinstance(v, int) or v < 1:
             raise ValueError(f"market.threshold_min_sold must be an integer >= 1, not {v!r}")
     for k, whole in (("device_min_n", True), ("games_default", True), ("game_value", False),
-                     ("game_value_max", False), ("pool_days", True), ("median_min_n", True)):
-        if k not in mc or (mc[k] is None and k == "game_value_max"):
+                     ("game_value_max", False), ("pool_days", True), ("median_min_n", True),
+                     ("threshold_max_sold_ratio", False), ("threshold_cap_min_sold", True)):
+        if k not in mc or (mc[k] is None and k in ("game_value_max", "threshold_max_sold_ratio")):
             continue
         v = mc[k]
         ok = not isinstance(v, bool) and isinstance(v, int if whole else (int, float)) and 0 <= v < float("inf")
         if not ok:
             raise ValueError(f"market.{k} must be {'an integer' if whole else 'a number'} >= 0"
-                             f"{' or null (no maximum)' if k == 'game_value_max' else ''}, not {v!r}")
+                             f"{' or null (no maximum)' if k in ('game_value_max', 'threshold_max_sold_ratio') else ''}"
+                             f", not {v!r}")
 
 
 def _plain(x):

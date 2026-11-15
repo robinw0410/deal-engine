@@ -315,17 +315,26 @@ ratios. `threshold_basis: median` restores the behaviour before 0.2.17.
 
 The cap at the median only holds if the median itself is reliable, i.e. counts at least
 `market.median_min_n` (default 10) listings (since 0.2.18). Below that, with enough sold prices, the
-basis is `sold`: the reference is the resale value from the cleaned sold prices alone (their median x
-`insights.sold_factor`, not capped by the asking prices), so the threshold is `flip_ratio` x that resale
-value and may be above the one on the median; the listing's resale estimate (score, insights) is then that
-value too, not capped by the asking prices. Example: median 65 € from 5 listings, sold median 130 €
-from 11: before 0.2.18 the threshold was about 41 €, now 0.7 x 121 € = 85 €.
+basis is `sold`: the same calculation from the cleaned sold prices alone (their median x
+`insights.sold_factor` / `sale_factor`, not capped by the asking prices), which may be above the median;
+the listing's resale estimate (score, insights) is then the sold value too. Example: median 65 € from 5
+listings, sold median 130 € from 11: before 0.2.18 the threshold was about 41 €, now 0.7 x 121 / 0.85 ≈ 100 €.
+
+On every basis (also `median`), the unit threshold (reference x ratio) is never above
+`market.threshold_max_sold_ratio` (default 0.85) x the cleaned sold median once the group has at least
+`market.threshold_cap_min_sold` (default 5) cleaned sold prices; `null` turns the cap off. Example: median
+34 €, 6 sold at 20 €: threshold 0.7 x 34 = 23.80 € would be above the sale price, capped at 17 €.
+Capped candidates carry `market_threshold_capped` (the unit threshold used); `pipeline.threshold_cap()`
+and `pipeline.unit_ref()` compute it. The cap needs the sold prices, which `collect()` loads with
+`threshold_basis: resale` and `insights.sold_clean: true`.
 
 ```yaml
 market:
   threshold_basis: resale   # or median
   threshold_min_sold: 8     # resale basis only with at least this many cleaned sold prices
   median_min_n: 10          # a median from fewer listings caps nothing: basis "sold"
+  threshold_max_sold_ratio: 0.85  # unit threshold at most 0.85 x cleaned sold median (null: off)
+  threshold_cap_min_sold: 5       # ... from this many cleaned sold prices of the group
 ```
 
 `pipeline.threshold_ref(m, sold_prices, sc)` returns `(reference, basis)`; candidates carry

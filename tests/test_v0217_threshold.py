@@ -99,18 +99,26 @@ def test_enough_sold_stricter_threshold():
     assert c["market_median"] == 200   # shown median unchanged
 
 
+NOCAP = {"threshold_max_sold_ratio": None}   # 0.2.18: without the cap at 0.85 x sold median
+
+
 def test_too_few_sold_as_before():
     sold = {"Console": {"p": [150] * 7, "d": []}}
-    c = select("Konsole 1TB", 130, sold=sold)
+    c = select("Konsole 1TB", 130, sold=sold, market=NOCAP)
     assert c is not None
     assert (c["market_threshold_basis"], c["market_threshold_ref"]) == ("median", 200)
-    assert select("Konsole 1TB", 141, sold=sold) is None
+    assert select("Konsole 1TB", 141, sold=sold, market=NOCAP) is None
+    # 0.2.18: from 5 sold prices the threshold is at most 0.85 x 150 = 127.5, also on the median basis
+    assert select("Konsole 1TB", 130, sold=sold) is None
+    c = select("Konsole 1TB", 127, sold=sold)
+    assert c["market_threshold_basis"] == "median" and c["market_threshold_capped"] == 128
 
 
 def test_basis_median_as_before():
-    c = select("Konsole 1TB", 130, market={"threshold_basis": "median"})
+    c = select("Konsole 1TB", 130, market={"threshold_basis": "median", **NOCAP})
     assert c is not None and c["market_threshold_basis"] == "median"
-    assert select("Konsole 1TB", 141, market={"threshold_basis": "median"}) is None
+    assert select("Konsole 1TB", 141, market={"threshold_basis": "median", **NOCAP}) is None
+    assert select("Konsole 1TB", 130, market={"threshold_basis": "median"}) is None    # capped at 127.5
 
 
 def test_defect_ratio():

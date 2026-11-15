@@ -13,17 +13,22 @@
   query alone gave medians from 5 to 14 listings (Nintendo Switch 210 € from 5, 3DS 65 € from 5).
   New market file keys per entry: `since`, `days`, `listings` [current, stored]; the log line names
   them. New `pipeline.add_pool(by_group, db, sc)`, `market.pool_since(mc)`; `market.refresh` takes `pool=`.
+- **Threshold capped by the sale price**: with at least `market.threshold_cap_min_sold` (default 5)
+  cleaned sold prices, the unit threshold is never above `market.threshold_max_sold_ratio` (default
+  0.85, `null` = off) x their median, on every basis including `median` (8BitDo: 119 % of the sold
+  median before). New `pipeline.threshold_cap(sold_prices, sc)` and `pipeline.unit_ref(ref, ratio, cap)`;
+  capped candidates carry `market_threshold_capped`. Both settings are validated at load.
 - **`sample_report` / pool only from `market.source`**: when a search sets `market.source`, the stored
   listings of other adapters (eBay, also from abroad) no longer count in `sample_report` either; the
   market queries only run there, as the cleaned sold prices already did. Searches without
   `market.source` are unchanged.
 - **Thin median caps the threshold no longer**: with a median of fewer than `market.median_min_n`
   (default 10) listings and enough cleaned sold prices, `threshold_ref` returns basis `sold`: the
-  resale value from the sold prices alone (median x `insights.sold_factor`, not capped by the asking
-  prices), so the threshold is `flip_ratio` x that value and may be above the one on the median
-  (3DS: median 65 € from 5, sold 130 € from 11: threshold 41 € -> 85 €). With a reliable median
+  same calculation as `resale` from the sold prices alone (median x `insights.sold_factor` /
+  `sale_factor`, not capped by the asking prices), which may be above the median
+  (3DS: median 65 € from 5, sold 130 € from 11: threshold 41 € -> ~100 €). With a reliable median
   nothing changes (never looser than on the median). The run log names the groups on the sold basis.
-  Such listings get the same resale value as `market_resale_estimate` (in `select()`, and in the
+  Such listings get the sold resale value as `market_resale_estimate` (in `select()`, and in the
   insights the sold estimate is not capped by the asking prices when the median is thin), so the score
   does not rate the new candidates as a loss.
 

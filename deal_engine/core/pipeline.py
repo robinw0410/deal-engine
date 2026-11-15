@@ -29,7 +29,7 @@ from .listing import EXTRA_NAME, RESERVED, normalize, shipping_unknown
 from .market import (DEFAULTS as MARKET_DEFAULTS, extras_resale, due as market_due, games_value,
                      refresh as market_refresh, resale_from_ask, sample_mode as market_sample_mode,
                      settings as market_settings, sold_estimate)
-from .util import load_json, num, platform_of, save_json
+from .util import load_json, median, num, platform_of, save_json
 
 # fields copied from a candidate into a new state entry (if the evaluation did not set them);
 # extra fields of the listing (km, year, ...) are carried as well
@@ -394,8 +394,8 @@ def threshold_ref(m, sold_prices, sc):
     median: the threshold is never looser than on the median basis. Only with a median of at least
     market.median_min_n listings (m["n"]); a thinner one caps nothing:
     basis "sold": the resale value from the sold prices alone (median x sold_factor, not capped by the
-    asking prices), as the unit reference: the threshold is flip_ratio x the resale value and may be above
-    the one on the median.
+    asking prices) / sale_factor, the same calculation as "resale"; it may be above the median.
+    The unit threshold (reference x ratio) is capped separately by threshold_cap().
     Otherwise basis "median" and ref_unit == m["median"] (the behaviour up to 0.2.16)."""
     s = market_settings((sc or {}).get("market"))
     med = m["median"]
@@ -412,9 +412,27 @@ def threshold_ref(m, sold_prices, sc):
     if (m.get("n") or 0) >= int(s["median_min_n"]):
         return min(med, min(ask, est) / sf), "resale"
     # thin median (fewer than median_min_n listings): it caps nothing, the cleaned sold prices decide alone,
-    # also above the median; the reference is the resale value itself (sold median x sold_factor), so the
-    # threshold is flip_ratio x the resale value (stricter than the ~flip_ratio / sale_factor of "resale")
-    return sold_estimate(list(sold_prices), None, ins["min_sold"], ins["sold_factor"]), "sold"
+    # also above the median; same calculation as "resale" without the asking-price caps:
+    # sold median x sold_factor / sale_factor (the threshold stays capped by threshold_cap, see there)
+    return sold_estimate(list(sold_prices), None, ins["min_sold"], ins["sold_factor"]) / sf, "sold"
+
+
+def threshold_cap(sold_prices, sc):
+    """Highest unit threshold of a group from its cleaned sold prices, or None: market.threshold_max_sold_ratio
+    (default 0.85) x their median once there are at least market.threshold_cap_min_sold (default 5) of
+    them, on every basis (also median). threshold_max_sold_ratio null: no cap."""
+    s = market_settings((sc or {}).get("market"))
+    r = s.get("threshold_max_sold_ratio")
+    if r is None or len(sold_prices or ()) < int(s["threshold_cap_min_sold"]):
+        return None
+    return float(r) * median(list(sold_prices))
+
+
+def unit_ref(ref_unit, ratio, cap):
+    """Unit reference so that ref x ratio stays at or below cap (threshold_cap; None: ref_unit as it is)."""
+    if cap is None or float(ratio) <= 0:
+        return ref_unit
+    return min(ref_unit, cap / float(ratio))
 
 
 def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPPING_COST, adapter_name=None,
@@ -449,11 +467,14 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
     sold = sold if isinstance(sold, dict) else {}
     refs = {}   # group name -> (ref_unit, basis), see threshold_ref()
 
+    caps = {}   # group name -> highest unit threshold from the sold prices (threshold_cap) or None
+
     def ref_of(name):
         if name not in refs:
             entry = sold.get(name)
             prices = entry.get("p") if isinstance(entry, dict) else None
             refs[name] = threshold_ref(market[name], prices, sc)
+            caps[name] = threshold_cap(prices, sc)
         return refs[name]
 
     in_market = [g["name"] for g in groups if g.get("name") in market and (market[g["name"]] or {}).get("median")]
@@ -498,7 +519,7 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
             ref_unit, basis = ref_of(g["name"])
             it["market_threshold_basis"], it["market_threshold_ref"] = basis, round(ref_unit)
             if basis == "sold":   # thin median: the resale value is the one from the sold prices (as insights)
-                it["market_resale_estimate"] = round(ref_unit)
+                it["market_resale_estimate"] = round(ref_unit * float(s["sale_factor"]))
             ratio = s["max_price_ratio"] if sig is None else s["defect_price_ratio"] if sig else s["flip_ratio"]
             total = (it.get("price") or 0) + ship
             if qty is None:
@@ -517,7 +538,11 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
                 it["market_resale_estimate"] += games_eur
             # threshold on the unit reference (median, or the resale value with enough sold data; never
             # above the median); extras and games keep their values (see threshold_ref)
-            if it.get("price") is not None and total > (ref_unit * qty + extra_eur + games_eur) * float(ratio):
+            # unit threshold never above threshold_max_sold_ratio x the cleaned sold median (threshold_cap)
+            ref_eff = unit_ref(ref_unit, ratio, caps.get(g["name"]))
+            if ref_eff < ref_unit:
+                it["market_threshold_capped"] = round(ref_eff * float(ratio))
+            if it.get("price") is not None and total > (ref_eff * qty + extra_eur + games_eur) * float(ratio):
                 too_expensive += 1
                 continue
         elif sig is False:
