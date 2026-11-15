@@ -273,14 +273,8 @@ def market_data(cfg=None):
     sc = config_mod.search(cfg, name)
     P = config_mod.paths(cfg, name)
     market = load_json(P["market"], {})
-    sold = {}
-    if P["history"].exists():
-        try:
-            con = history.connect(P["history"])
-            sold = history.sold_by_group(con, name, 60)
-            con.close()
-        except sqlite3.Error:
-            pass
+    # cleaned like the candidate threshold and insights (single devices, one source, no reposts), read-only
+    sold = history.sold_for_search(P["history"], sc, window_days=60, log=lambda s: None)
     mc = sc.get("market") or {}
     return mc.get("groups", []), market, sold, market_settings(mc)
 

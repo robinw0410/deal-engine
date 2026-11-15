@@ -105,7 +105,8 @@ One run of a search (`python -m deal_engine run electronics`) does, per adapter:
    most once per `refresh_hours`), record everything in the tracking database, compare the stored
    listings with the results (price changes, reserved, gone via `check()`), and pick new
    candidates: they must pass the filters, not be known, and be cheap enough relative to the
-   market median (`flip_ratio` for working units, `defect_price_ratio` for defective ones).
+   market reference (`flip_ratio` for working units, `defect_price_ratio` for defective ones; see
+   [Candidate threshold](#candidate-threshold)).
    With the LLM evaluator and `classify` enabled, the titles of the possible candidates are
    classified by a small model **before** this selection (see [Market groups](#market-groups)).
 2. **prefilter** (optional): a cheap model drops obvious junk.
@@ -269,9 +270,13 @@ still has a 10-minute timeout); with `market.sample: device_only` the bundles no
 queries count against it too.
 
 A stored result is only used when it is **plausible**: a group named by the model must have a
-`match` regex that hits the title, and that group's `veto` must not hit it (`exclude` is ignored
-for this check, so the model may place "DualSense for PS5 console" in DualSense, but never
-"DualSense" in PS5, nor a title in a group whose veto rules it out). Then it replaces
+`match` regex that hits the title, and neither that group's `veto` nor its `exclude` may hit it.
+One exception for `exclude`: if it only passes the title on to a later group that matches it, the
+model may overrule that fall-through. So "DualSense for PS5 console" may go to DualSense, but
+"Xbox 360 Controller" never to Xbox Controller when 360 is in its exclude, and "Switch 2 Pro
+Controller" never to Switch Pro Controller when an earlier group takes it (since 0.2.17; before,
+`exclude` was ignored here). An implausible result counts neither for the median nor for the sale
+price from disappeared listings of that group. Then it replaces
 the word rules for that listing — in the candidate selection, in tracking (`listing.grp`) and in
 the insights: `device`/`bundle` → that group (and quantity for controller-like groups),
 `accessory` → skipped / no group, `part` → see [Spare parts](#spare-parts), `other` → no group, no
@@ -282,6 +287,57 @@ callable evaluator (demo, tests) no model is called.
 
 Group regexes (`match`, `exclude`, `veto`) are checked when a search is loaded; an invalid one is
 a configuration error.
+
+### Candidate threshold
+
+A listing becomes a candidate if price + shipping is below the market reference x `flip_ratio`
+(working units), `defect_price_ratio` (defective units) or `max_price_ratio` (searches without
+defect signal); extras and games are added to the reference first.
+
+The reference is the group's asking median, unless `market.threshold_basis` is `resale` (the
+default since 0.2.17) and the group has at least `market.threshold_min_sold` (default 8) cleaned
+disappeared listings (see [Sale price from disappeared listings](#sale-price-from-disappeared-listings)).
+Then the reference is the realistic resale value of one unit divided by `sale_factor`: the lower of
+the asking-price estimate (min(p25, median x `sale_factor`)) and the sold estimate (median of the
+disappeared listings x `insights.sold_factor`), never above the median. Asking prices of consoles
+sit above what they actually go for, because cheap listings disappear first and expensive ones stay
+online; this keeps the threshold close to real sale prices without changing the meaning of the
+ratios. `threshold_basis: median` restores the behaviour before 0.2.17.
+
+```yaml
+market:
+  threshold_basis: resale   # or median
+  threshold_min_sold: 8     # resale basis only with at least this many cleaned sold prices
+```
+
+`pipeline.threshold_ref(m, sold_prices, sc)` returns `(reference, basis)`; candidates carry
+`market_threshold_basis` and `market_threshold_ref`, and the run log names the groups on each basis.
+
+### Sale price from disappeared listings
+
+The insights replace the resale estimate by median x `sold_factor` of the disappeared listings of
+the group (last `window_days`), once there are `min_sold` of them and if that is lower. With
+`sold_clean: true` (default since 0.2.17) only disappeared single devices count:
+
+- the group is determined again from the stored classification (kind `device`, quantity 1, plausible
+  as above) or, with `market.sample: all`, from the word rules; the stored tracking group is not trusted;
+- no defect flag or defect signal, price within the group's `min`/`max`;
+- only `market.source` if set;
+- eBay only from the countries in `sold_countries` (location starting with the country code; other
+  sources without a code count as domestic);
+- reposts and a dealer's parallel copies count once, and only if the last listing of the chain
+  disappeared. Same chain: the same title and price (±2 % or equal whole euros) with no differing
+  photo, or the same seller key or photo with the same group and a price within ±10 %, at most
+  `sold_dedup_days` apart.
+
+```yaml
+insights: {min_sold: 8, window_days: 60, sold_factor: 0.93,
+           sold_clean: true, sold_dedup_days: 14, sold_countries: [AT, DE]}
+```
+
+`sold_clean: false` restores the statistic of 0.2.16. `history.sold_for_search(db, sc)` reads the
+cleaned values read-only (the candidate threshold, the insights and the deal list's price hint use
+it); `history.sold_by_group(con, search, days, clean=None)` keeps the old statistic.
 
 ### Market prices
 
@@ -491,6 +547,19 @@ a quantity of at least 2 ("3 Stück", "5x"); model numbers like "X230" do not co
 stay. `parts` must be one of the four values and `part_regex` a valid
 regex, otherwise loading the search fails. Spare parts are not taken out of the market statistics
 by this setting (the locale's `market_exclude` and the group `min`/`max` do that).
+
+### Deals from a listing
+
+When you open the deal list from a listing's "bought → deal list" link (`web.deal_link: true`), the
+new deal is linked to that listing: its id (`<source>-<id>`, the same as in the state and in
+history.db), market group, score, expected profit and repair hours are saved with the deal. The
+server fills any of these that the form leaves empty from the current state of the searches
+(`deals.market_search` first; a listing no longer in any state still gives its market group from
+history.db, read-only); values sent by the form take precedence and an unknown id still creates the
+deal. If you only paste the listing's URL into "Link", the deal is linked when exactly one listing
+has that URL. Editing a deal looks nothing up unless its listing id changes. `deals.db` gets the
+column `score` on start (since 0.2.17; older deals keep it empty). Deals created before or by hand
+without a link stay unlinked; set the listing later by editing and the empty fields are filled.
 
 ### Wish list
 

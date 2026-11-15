@@ -44,6 +44,7 @@ python -m deal_engine validate listings.json
 | `distance_km` | number | no | Use this instead of `lat`/`lon` if the source provides a distance. |
 | `shipping_possible` | bool | no | The platform offers shipping with buyer protection. `false` = pickup only. `null` = unknown. |
 | `shipping_cost` | number | no | Shipping cost to you, if the source states it. `0` = free shipping. Missing/`null` = unknown: if neither `shipping_possible` nor a distance is known either, the item is marked `shipping_unknown` and `shipping.unknown_cost` (default 15 €) is assumed for candidate selection and score. |
+| `seller` | string | no | An opaque seller key of the platform (an id, never a name). Stored in history.db only to recognise reposts. |
 | `private` | bool | no | Private seller (`true`) or business (`false`). Market estimates prefer private offers. |
 | `published` | `YYYY-MM-DD` | no | Publication date. Used for `max_age_days`, "fresh" market prices and time online. |
 | `condition` | string | no | Condition as stated by the source. |

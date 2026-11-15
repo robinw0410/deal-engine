@@ -1,5 +1,54 @@
 # Changelog
 
+## 0.2.17 – 2026-11-15
+
+### Changed
+
+- **Candidate threshold on the resale value**: `select()` compares price + shipping with the
+  realistic resale value instead of the raw asking median once the group has at least
+  `market.threshold_min_sold` (default 8) cleaned sold prices. Unit reference:
+  `min(resale_from_ask, sold_estimate) / sale_factor`, capped at the median, so `flip_ratio`,
+  `defect_price_ratio` and `max_price_ratio` keep their meaning and the threshold is never looser
+  than before. Extras and games keep their values. Asking medians of consoles sat 15–39 % above the
+  level of disappeared listings. New market settings `threshold_basis` (`resale` default, `median` =
+  previous behaviour) and `threshold_min_sold`, validated at config load. New public
+  `pipeline.threshold_ref(m, sold_prices, sc) -> (ref_unit, basis)`; `select()` takes `sold=`;
+  `collect()` loads the cleaned sold prices once per run (median if loading fails). Candidates carry
+  `market_threshold_basis` and `market_threshold_ref`; a log line names the groups on each basis.
+- **LLM group respects `exclude`**: a classification naming a group whose `exclude` hits the title
+  is now implausible (word rules decide), like `veto` before. Exception: when the exclude only passes
+  the title on to a later group that matches it, the model may still overrule that fall-through
+  ("DualSense für PS5 Konsole", "Switch / OLED Joy-Con links"). Fixes Xbox 360 controllers counted as
+  Xbox Controller, Switch 2 Pro controllers as Switch Pro Controller and Switch tablets as Nintendo
+  Switch, in the median as well as in the sale price from disappeared listings.
+- **Cleaned sale price from disappeared listings** (`history.sold_by_group`, used by the insights,
+  the candidate threshold and the deal list's price hint): only single devices (group determined
+  again from the classification or the word rules, not from the stored tracking group), no defect
+  flag or defect signal, price within the group's min/max, only `market.source` if set, eBay only
+  from `insights.sold_countries`, and repost chains (same title and price, or same seller/photo with
+  the same group and price ±10 % within `sold_dedup_days`) count once and only if their last listing
+  disappeared. New insights settings `sold_clean` (default true; false = statistic as before),
+  `sold_dedup_days` (14), `sold_countries` (["AT", "DE"]); new `insights.settings(sc)`.
+- The deal list's price hint reads the cleaned sale prices read-only (`history.sold_for_search`)
+  instead of opening history.db for writing.
+
+### Added
+
+- `history.sold_settings(sc)` and `history.sold_for_search(db, sc, window_days=None, clean=True,
+  log=print)` (read-only, never raises); `sold_by_group(..., clean=None)` keeps the old statistic.
+- Listing format: optional field `seller` (an opaque seller key, never a name), stored in the new
+  nullable column `listing.seller` (added on connect) and used only for repost detection.
+- **Deals keep the listing they came from**: creating a deal with a listing id (`lid` from the
+  search page link) fills market group, score, expected profit and repair hours from the state of
+  the searches (`deals.market_search` first); values sent by the form take precedence, an unknown id
+  still creates the deal. A listing that is no longer in any state still gives its market group from
+  history.db (read-only). Without a listing id, it is derived from the link when exactly one listing
+  in the states has that URL. Editing a deal looks nothing up unless its listing id changes.
+- deals.db: new column `score` (added automatically on start; existing deals keep it empty), shown
+  in the deal list and the deal dialog. `listing_id` is validated (`<source>-<id>`), `score` must be
+  between 0 and 10. The "bought → deal list" link (`web.deal_link`) also passes the listing's score
+  (numeric scores only).
+
 ## 0.2.16 – 2026-11-11
 
 ### Added

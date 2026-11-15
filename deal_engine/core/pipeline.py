@@ -377,7 +377,7 @@ def threshold_ref(m, sold_prices, sc):
     sf = float(s["sale_factor"])
     if threshold_basis(sc) != "resale" or len(sold_prices or ()) < min_sold or sf <= 0:
         return med, "median"
-    ins = {**insights.DEFAULTS, **((sc or {}).get("insights") or {})}   # the same source as insights.apply
+    ins = insights.settings(sc)   # the same source as insights.apply
     ask = resale_from_ask(m, sf)
     est = sold_estimate(list(sold_prices), ask, ins["min_sold"], ins["sold_factor"])
     unit = ask if est is None else min(ask, est)
@@ -393,7 +393,8 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
     category_caps[].backlog) are appended to it. Without a configured backlog nothing is discarded.
 
     classified: {source_id: (group name, qty, kind)} from the LLM classification; if plausible
-    (groups.from_classification: a named group's match regex hits the title) it replaces the word
+    (groups.from_classification: a named group's match regex hits the title, its veto and
+    exclude do not, except an exclude that only passes the title on to a later group) it replaces the word
     rules for that listing: device/bundle -> that group (qty for controller-like groups),
     accessory -> skipped, other -> no group (no market comparison). Implausible: word rules.
     Spare parts without the device are dropped according to sc["parts"] (groups.drop_part: kind

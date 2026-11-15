@@ -81,6 +81,8 @@ searches:
       sale_factor: 0.85                # asking median -> realistic resale price
       flip_ratio: 0.7                  # working units: candidate below median x 0.7
       defect_price_ratio: 0.6          # defective units: candidate below median x 0.6
+      threshold_basis: resale          # candidate threshold: resale value with enough sold data, or "median"
+      threshold_min_sold: 8            # resale basis only with at least this many cleaned sold prices per group
       # sample: device_only            # median only from listings the LLM classification calls a single device
       #                                # (default: all = word rules; needs track, classify and the LLM evaluator)
       # device_min_n: 8                # device_only: with fewer devices, bundles are added at price minus extras
@@ -105,7 +107,8 @@ searches:
 
     track: true                        # price tracking in history.db (sale price estimates)
     track_checks: {per_group: 8, max_checks: 60}
-    insights: {min_sold: 8, window_days: 60, sold_factor: 0.93}
+    insights: {min_sold: 8, window_days: 60, sold_factor: 0.93,
+               sold_clean: true, sold_dedup_days: 14, sold_countries: [AT, DE]}   # cleaned sale prices
 
     score:
       enabled: true                    # computed score; see deal_engine/core/score.py for all parameters
