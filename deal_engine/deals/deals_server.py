@@ -51,8 +51,14 @@ DEAL_FIELDS = {
     "item": str, "category": str, "link": str, "notes": str, "status": str,
     "bought_date": str, "sold_date": str,
     "buy_price": float, "parts_cost": float, "other_cost": float, "hours": float, "sell_price": float,
-    "listing_id": str, "est_profit": float, "est_hours": float, "market_group": str,
+    "listing_id": str, "est_profit": float, "est_hours": float, "market_group": str, "score": float,
 }
+# listing id as in the state ("id") and history.db (listing.uid): <adapter>-<source_id>
+LISTING_ID = re.compile(r"[a-z0-9_]+-[A-Za-z0-9_-]{1,64}")
+SCORE_RANGE = (0, 10)   # core/score.py: 1-10 (evaluator scores without numbers are taken as they are)
+# deal field <- field of the listing in the state of a search (taken over when a deal is created)
+FROM_LISTING = {"market_group": "market_group", "score": "score", "est_profit": "expected_profit_eur",
+                "est_hours": "repair_hours"}
 PART_FIELDS = {
     "name": str, "device": str, "spec": str, "unit_cost": float, "qty": int,
     "install_min": int, "estimated": int, "link": str, "notes": str,
@@ -63,7 +69,7 @@ CREATE TABLE IF NOT EXISTS deal(
   id TEXT PRIMARY KEY, item TEXT NOT NULL, category TEXT, link TEXT, notes TEXT,
   status TEXT NOT NULL DEFAULT 'bought', bought_date TEXT, sold_date TEXT,
   buy_price REAL, parts_cost REAL, other_cost REAL, hours REAL, sell_price REAL,
-  listing_id TEXT, est_profit REAL, est_hours REAL, market_group TEXT
+  listing_id TEXT, est_profit REAL, est_hours REAL, market_group TEXT, score REAL
 );
 CREATE TABLE IF NOT EXISTS part(
   id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, device TEXT, spec TEXT,
@@ -104,9 +110,19 @@ def connect(cfg=None):
 def init(cfg=None):
     con = connect(cfg)
     con.executescript(SCHEMA)
+    migrate(con)
     wishes.init(con)
     con.close()
     csrf.secret(cfg or CFG)   # state/deals-secret (0400) on first start
+
+
+def migrate(con):
+    """Columns added after the first release (deals.db from older versions keep working; existing rows
+    get NULL). Idempotent."""
+    have = {r[1] for r in con.execute("PRAGMA table_info(deal)")}
+    if "score" not in have:   # 0.2.17
+        con.execute("ALTER TABLE deal ADD COLUMN score REAL")
+    con.commit()
 
 
 def clean(body, fields, base=None, required="item"):
@@ -127,15 +143,123 @@ def clean(body, fields, base=None, required="item"):
                 v = round(v, 2)
             if not (-100000 <= v <= 100000) or (v < 0 and k != "est_profit"):
                 raise ValueError(f"{k}: implausible value")
+            if k == "score" and not (SCORE_RANGE[0] <= v <= SCORE_RANGE[1]):
+                raise ValueError(f"score: between {SCORE_RANGE[0]} and {SCORE_RANGE[1]}")
         else:
             v = str(v)[:1000].strip()
             if k.endswith("_date") and v and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", v):
                 raise ValueError(f"{k}: date as YYYY-MM-DD")
             if k == "link" and v and not re.match(r"https?://", v):
                 raise ValueError("link: must start with http(s)://")
+            if k == "listing_id" and v and not LISTING_ID.fullmatch(v):
+                raise ValueError("listing_id: expected <source>-<id> (as in the search pages)")
         d[k] = v
     if not d.get(required):
         raise ValueError(f"{required} is missing")
+    return d
+
+
+# ---------------------------------------------------------------------------- listing data
+def _search_order(cfg):
+    """Search names of the config, deals.market_search first."""
+    names = list(cfg.get("searches") or {})
+    first = (cfg.get("deals") or {}).get("market_search")
+    return ([first] if first in names else []) + [n for n in names if n != first]
+
+
+def _states(cfg):
+    """(search name, listings) of every search whose state file can be read."""
+    for name in _search_order(cfg):
+        try:
+            path = config_mod.paths(cfg, name)["state"]
+        except (config_mod.ConfigError, KeyError, TypeError, ValueError, OSError):
+            continue
+        state = load_json(path, {})
+        rows = state.get("listings") if isinstance(state, dict) else None
+        if isinstance(rows, list):
+            yield name, [l for l in rows if isinstance(l, dict)]
+
+
+def _norm_url(u):
+    return str(u or "").strip().split("#")[0].rstrip("/")
+
+
+def find_listing(cfg, lid):
+    """The listing with state id `lid` (= history listing.uid) from the state of the searches, or None."""
+    for _, rows in _states(cfg):
+        for l in rows:
+            if l.get("id") == lid:
+                return l
+    return None
+
+
+def listing_id_for_link(cfg, link):
+    """State id of the listing whose URL is `link`, if exactly one listing has it; else None."""
+    want = _norm_url(link)
+    if not want:
+        return None
+    found = set()
+    for _, rows in _states(cfg):
+        for l in rows:
+            urls = list(l.get("urls") or []) + [l.get("url")]
+            if l.get("id") and any(_norm_url(u) == want for u in urls if u):
+                found.add(str(l["id"]))
+    if len(found) == 1:
+        lid = found.pop()
+        return lid if LISTING_ID.fullmatch(lid) else None
+    return None
+
+
+def history_group(cfg, lid):
+    """Market group of `lid` from history.db (read-only), for listings no longer in a state."""
+    names = _search_order(cfg)
+    if not names:
+        return None
+    try:
+        db = config_mod.paths(cfg, names[0])["history"]
+    except (config_mod.ConfigError, KeyError, TypeError, ValueError, OSError):
+        return None
+    if not db.exists():
+        return None
+    try:
+        con = history.connect_ro(db)
+        try:
+            row = con.execute("SELECT grp FROM listing WHERE uid=?", (lid,)).fetchone()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return None
+    return row[0] if row and row[0] else None
+
+
+def fill_from_listing(d, cfg=None, from_link=True):
+    """Fill the empty fields of FROM_LISTING in deal `d` from the listing `d["listing_id"]` in the
+    state of the searches (market group, score, expected profit, repair hours). Values already in `d`
+    (sent by the form) win. Without a listing_id, it is derived from `link` when exactly one listing in
+    the states has that URL (from_link). An unknown id leaves the fields empty; values of the state
+    that do not pass clean() are skipped. Returns d."""
+    cfg = cfg or CFG
+    if from_link and not d.get("listing_id") and d.get("link"):
+        lid = listing_id_for_link(cfg, d["link"])
+        if lid:
+            d["listing_id"] = lid
+    lid = d.get("listing_id")
+    missing = [k for k in FROM_LISTING if d.get(k) in (None, "")]
+    if not lid or not missing:
+        return d
+    l = find_listing(cfg, lid)
+    if l is not None:
+        vals = {k: l.get(src) for k, src in FROM_LISTING.items()}
+    else:
+        vals = {"market_group": history_group(cfg, lid)}
+    for k in missing:
+        v = vals.get(k)
+        if v in (None, "") or isinstance(v, (bool, dict, list)):
+            continue
+        try:
+            d[k] = clean({k: v}, {k: DEAL_FIELDS[k]}, {"item": "-"})[k]
+        except ValueError:
+            continue
     return d
 
 
@@ -616,7 +740,7 @@ class H(BaseHTTPRequestHandler):
         if r == "/api/deals":
             def add(con):
                 b = self.body()
-                d = clean(b, DEAL_FIELDS)
+                d = fill_from_listing(clean(b, DEAL_FIELDS))
                 d["id"] = secrets.token_hex(6)
                 save_deal(con, d)
                 set_deal_parts(con, d["id"], b.get("parts"))
@@ -658,6 +782,8 @@ class H(BaseHTTPRequestHandler):
                     raise KeyError
                 b = self.body()
                 d = clean(b, DEAL_FIELDS, dict(row))
+                if d.get("listing_id") and d["listing_id"] != row["listing_id"]:
+                    fill_from_listing(d, from_link=False)   # listing changed: take over what is empty
                 save_deal(con, d)
                 if "parts" in b:
                     set_deal_parts(con, d["id"], b["parts"])
