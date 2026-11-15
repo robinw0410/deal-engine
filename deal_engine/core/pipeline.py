@@ -412,6 +412,7 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
     parts, part_rx, n_part = sc.get("parts", "llm"), mc.get("part_regex"), 0
     cands, too_expensive, no_signal, n_cls = [], 0, 0, 0
     hook_rej = []
+    sold_given = sold is not None   # collect() passed sold prices (log the basis only then)
     sold = sold if isinstance(sold, dict) else {}
     refs = {}   # group name -> (ref_unit, basis), see threshold_ref()
 
@@ -423,7 +424,7 @@ def select(items, known, seen, market, sc, log=print, unknown_cost=UNKNOWN_SHIPP
         return refs[name]
 
     in_market = [g["name"] for g in groups if g.get("name") in market and (market[g["name"]] or {}).get("median")]
-    if in_market and sold is not None:   # only when collect() passed sold prices (not in plain calls)
+    if in_market and sold_given:
         on_resale = [n for n in dict.fromkeys(in_market) if ref_of(n)[1] == "resale"]
         log(f"market threshold: {len(on_resale)} group(s) on the resale basis"
             f"{' (' + ', '.join(on_resale[:8]) + ')' if on_resale else ''}, "

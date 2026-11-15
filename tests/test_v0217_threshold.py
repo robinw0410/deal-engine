@@ -160,6 +160,8 @@ def test_log_line_counts_groups():
     assert "market threshold: 1 group(s) on the resale basis (Console), 1 on the median" in lines
     lines = []
     select("Konsole 1TB", 100, sold=None, log=lines.append)
+    assert not any("market threshold" in s for s in lines)   # no sold data passed: nothing to report
+    select("Konsole 1TB", 100, sold={}, log=lines.append)     # loading failed in collect(): all on the median
     assert "market threshold: 0 group(s) on the resale basis, 2 on the median" in lines
 
 
@@ -222,3 +224,12 @@ def test_collect_basis_median_does_not_load(tmp_path, monkeypatch):
     calls = []
     c, _ = _collect(tmp_path, monkeypatch, lambda *a, **k: calls.append(1) or SOLD, {"threshold_basis": "median"})
     assert c["candidates"] == 2 and not calls
+
+
+def test_no_threshold_log_line_without_sold_data():
+    """select() without sold= (plain calls, tests of other projects) logs nothing about the basis."""
+    from deal_engine.core import pipeline as _p
+    lines = []
+    sc = {"_name": "t", "filters": {}, "market": {"groups": [{"name": "G", "match": "g", "min": 1, "max": 999}]}}
+    _p.select({}, set(), {}, {"G": {"median": 100, "p25": 90, "n": 10}}, sc, log=lines.append)
+    assert not any("market threshold" in s for s in lines)
